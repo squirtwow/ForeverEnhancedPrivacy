@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="FEPRIVACY_TOGGLE" header="FEPRIVACY" category="ADDONS">
+		ForeverEnhancedPrivacy_Toggle()
+	</Binding>
+</Bindings>

@@ -1,0 +1,20 @@
+## Interface: 16001
+## Title: Forever Enhanced Privacy
+## Notes: A private mode for streams and screenshots: hides or swaps names, chat giveaways and where you are.
+## Author: Squirt
+## Version: 0.1.0
+## SavedVariables: ForeverEnhancedPrivacyDB
+## IconTexture: Interface\AddOns\ForeverEnhancedPrivacy\Media\Icon.tga
+## Category: UI
+# Personal and unpublished. Bindings.xml loads on its own.
+
+Core.lua
+Theme.lua
+Names.lua
+UnitFrames.lua
+Chat.lua
+Social.lua
+Windows.lua
+World.lua
+Window.lua
+Eye.lua
