@@ -26,7 +26,7 @@ local H = {}
 H.ADDON = "ForeverEnhancedPrivacy"
 -- The addon's files, in the TOC's order (Tools/TestRules.mjs checks they match).
 H.FILES = { "Core.lua", "Theme.lua", "Names.lua", "UnitFrames.lua", "Chat.lua", "Social.lua", "Windows.lua", "World.lua",
-    "Window.lua", "Eye.lua" }
+    "Window.lua", "Eye.lua", "MinimapButton.lua" }
 
 local pack = table.pack or function(...) return { n = select("#", ...), ... } end
 local unpackAll = table.unpack or unpack
@@ -841,10 +841,13 @@ H.CLASS_NAMES = { DRUID = "Druid", WARRIOR = "Warrior", MAGE = "Mage", PRIEST = 
 local FONTS = { "GameFontNormal", "GameFontNormalSmall", "GameFontNormalLarge", "GameFontNormalHuge", "GameFontHighlight",
     "GameFontHighlightSmall", "GameFontHighlightLarge", "GameFontDisable", "GameFontDisableSmall" }
 
--- Blizzard's frames every test has: UIParent, a chat frame and GameTooltip.
+-- Blizzard's frames every test has: UIParent, the minimap (140 across, its
+-- button's home), a chat frame and GameTooltip.
 local function BuildBlizzardFrames()
     _G.UIParent = H.BlizzardFrame("Frame", "UIParent")
     S[UIParent].width, S[UIParent].height = 1024, 768
+    _G.Minimap = H.BlizzardFrame("Frame", "Minimap", UIParent)
+    S[Minimap].width, S[Minimap].height = 140, 140
     H.chatFrame = H.BlizzardFrame("ScrollingMessageFrame", "ChatFrame1", UIParent)
     _G.DEFAULT_CHAT_FRAME = H.chatFrame
     H.NewTooltip("GameTooltip", 8)

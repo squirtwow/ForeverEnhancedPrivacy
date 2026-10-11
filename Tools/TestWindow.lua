@@ -2,8 +2,9 @@
 -- in order, a row for every setting (ticks and choices, from Core.lua's one
 -- table), ticks and choices saving and telling the owner while private, the
 -- Overview's big button, modes, name styles, your name and made-up BattleTag
--- boxes (and the left column still fitting), name colours and the eye, the
--- live preview, the footer's notes and credit, quiet tags, Good to know,
+-- boxes (and the left column still fitting), name colours, the eye's and the
+-- minimap button's ticks side by side, the live preview, the footer's notes
+-- and credit, quiet tags, Good to know,
 -- Escape, Options > AddOns, sizes given at creation, scroll frames pinned by
 -- two corners, no em dash anywhere shown, and Blizzard's frames untouched.
 -- Run with fengari: Tools/TestWindow.lua
@@ -325,6 +326,21 @@ do
     True(right - 6 <= 372 - 20, "the colour buttons fit beside the preview (" .. (right - 6) .. ")")
     Equal(S[H.Find("EXTRAS")].points[1][3] .. " " .. S[w.eyeRow].points[1][3] .. " " .. S[w.keyNote].points[1][3], "-352 -370 -412",
         "Extras moved down to make room")
+    -- The eye and the minimap button side by side (no room for another row
+    -- above the key note): the column's width between them, a gap apart,
+    -- each label fitting its tick with a little to spare.
+    local eye, minimap = w.eyeRow, w.minimapRow
+    Equal(S[minimap].points[1][3] .. " " .. S[minimap].points[1][2] .. " " .. tostring(S[minimap].parent == S[eye].parent),
+        "-370 " .. (S[eye].width + 10) .. " true", "the minimap button's tick beside the eye's, 10 apart (as the list pages' columns)")
+    Equal(S[eye].width + 10 + S[minimap].width, 350, "the two filling the column, clear of the preview")
+    Equal(S[eye].height .. " " .. S[minimap].height, "30 30", "as tall as every tick")
+    for _, tick in ipairs({ eye, minimap }) do
+        local used = 32 + tick.label:GetStringWidth()
+        True(used <= S[tick].width - 8, H.Text(tick.label) .. ": fits its tick (" .. used .. " of " .. S[tick].width .. ")")
+    end
+    -- In the game a label runs nearer seven units a letter: both still fit.
+    True(32 + #P.EYE_ROW.label * 7 <= S[eye].width and 32 + #P.MINIMAP_ROW.label * 7 <= S[minimap].width,
+        "and at seven units a letter")
 end
 -- The whole left column still fits: each control below the one before
 -- (with a little room), and the last line above the footer.
@@ -365,11 +381,33 @@ Leave(colours.game)
 
 -- Extras.
 local eyeRow = w.eyeRow
-Equal(H.Text(eyeRow.label) .. " " .. tostring(eyeRow:GetChecked()), "Show a small eye while it's on true", "the eye, on")
+Equal(H.Text(eyeRow.label) .. " " .. tostring(eyeRow:GetChecked()), "Show a small eye true", "the eye, on")
 eyeRow:Click()
 Equal(P:Get("eye"), false, "a click turns it off")
 eyeRow:Click()
 Equal(P:Get("eye"), true, "and on")
+Hover(eyeRow)
+Equal(Note(), WHITE .. "Show a small eye|r  A small eye at the top of the screen while private mode is on, so you know it's working. "
+    .. "It hides itself in screenshots, but stream viewers can see it, so you can turn it off.", "its note says when it shows")
+Leave(eyeRow)
+local minimapRow = w.minimapRow
+Equal(H.Text(minimapRow.label) .. " " .. tostring(minimapRow:GetChecked()) .. " " .. tostring(minimapRow.tag),
+    "Show a minimap button true nil", "the minimap button, on, no tag")
+minimapRow:Click()
+Equal(tostring(P:Get("minimap")) .. " " .. tostring(minimapRow:GetChecked()) .. " " .. tostring(P.MinimapButton:Button():IsShown()),
+    "false false false", "a click hides the button")
+minimapRow:Click()
+Equal(tostring(P:Get("minimap")) .. " " .. tostring(minimapRow:GetChecked()) .. " " .. tostring(P.MinimapButton:Button():IsShown()),
+    "true true true", "and shows it")
+Hover(minimapRow)
+Equal(Note(), WHITE .. "Show a minimap button|r  Left-click turns private mode on or off, right-click opens these settings, and you "
+    .. "can drag it round the minimap. It hides itself in screenshots.", "its note says what the button does")
+Leave(minimapRow)
+SlashCmdList.FEPRIVACY("minimap")
+Equal(minimapRow:GetChecked(), false, "/privacy minimap unticks it at once")
+SlashCmdList.FEPRIVACY("minimap")
+Equal(minimapRow:GetChecked(), true, "and ticks it again")
+H.Clear()
 Equal(H.Text(w.keyNote), "Set its key in the game's Key Bindings, under AddOns.", "where its key is set")
 
 -- The preview ------------------------------------------------------------------------------------------------------
@@ -553,6 +591,7 @@ do
     P:Set("myName", "Shade")
     P:Set("myTag", "Fake#9999")
     P:Set("eye", false)
+    w.minimapRow:Click()
     P:Set("chatNames", false)
     P:Set("publicChannels", true)
     P:Set("instChat", "chat")
@@ -584,6 +623,8 @@ do
     Equal(tostring(w.modes.buttons.key.selected) .. " " .. tostring(w.styles.buttons.class.selected) .. " "
         .. tostring(w.colours.buttons.game.selected) .. " " .. tostring(w.eyeRow:GetChecked()) .. " " .. tostring(w.modeTag:IsShown()),
         "true true true true false", "and its controls")
+    Equal(tostring(P:Get("minimap")) .. " " .. tostring(w.minimapRow:GetChecked()) .. " " .. tostring(P.MinimapButton:Button():IsShown()),
+        "true true true", "the minimap button back, its tick ticked")
     Equal(box:GetText() .. "|" .. tagBox:GetText() .. "|" .. tostring(box.placeholder:IsShown()) .. " "
         .. tostring(tagBox.placeholder:IsShown()), "||true true", "both boxes emptied, their hints back")
     Equal(H.Text(w.status) .. " / " .. H.Text(w.privateButton.label), "Private mode: off / Turn private mode on", "saying it's off")

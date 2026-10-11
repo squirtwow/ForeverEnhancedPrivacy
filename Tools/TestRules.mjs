@@ -6,7 +6,8 @@
 // Blizzard function of the "Name_Update" kind called by the addon; Blizzard's
 // frames named in the code never shown, hidden, moved, scripted or written
 // on; chat output only through the core; settings and the reset changed only
-// from the window, never through the game's pop-ups; every module file registers itself
+// from the window (and the minimap button's own two from the button and
+// /privacy minimap), never through the game's pop-ups; every module file registers itself
 // and its header names every setting it owns; British spelling in player
 // text; and no other addon named.
 // Run with: node --test Tools/TestRules.mjs
@@ -97,7 +98,7 @@ test('the TOC: the right fields, and every Lua file once, in the harness\'s orde
   assert.deepEqual(listed, files, 'the harness loads them in the TOC\'s order');
   assert.deepEqual(listed.slice(0, 3), ['Core.lua', 'Theme.lua', 'Names.lua'], 'the core first');
   assert.deepEqual(listed.slice(3, 8), MODULES.map(name => name + '.lua'), 'then the five modules');
-  assert.deepEqual(listed.slice(8), ['Window.lua', 'Eye.lua'], 'then the window and the eye');
+  assert.deepEqual(listed.slice(8), ['Window.lua', 'Eye.lua', 'MinimapButton.lua'], 'then the window, the eye and the minimap button');
 });
 
 test('the key binding: Bindings.xml calls the core\'s global, under AddOns', async () => {
@@ -315,17 +316,35 @@ test('chat output only through the core (P:Print, P:Say)', async () => {
 
 // Settings change only from the window (P:Set, and Reset all settings after it
 // asks, inside the window); no Blizzard dialog is used or written for that.
-test('settings and the reset only from the window, never through the game\'s pop-ups', async () => {
+// The minimap button's own two are the only others: where it's dragged to
+// (saved by the button) and its tick's /privacy minimap (the core's command).
+const OWN_SETTINGS = { 'MinimapButton.lua': ['minimapAngle'], 'Core.lua': ['minimap'] };
+function settingChanges(files) {
   const found = [];
-  for (const { name, code } of await addonCode()) {
+  for (const { name, source, code } of files) {
     for (const match of code.matchAll(/\bStaticPopupDialogs\b|\bStaticPopup_\w+/g)) found.push(`${name}:${lineOf(code, match.index)} ${match[0]}`);
     if (name === 'Window.lua') continue;
     for (const match of code.matchAll(/\bP\s*:\s*(Set|Reset)\s*\(/g)) {
       if (name === 'Core.lua' && /function\s+$/.test(code.slice(Math.max(0, match.index - 12), match.index))) continue;
+      // The code keeps the source's positions, so the key is read from the source.
+      const key = match[1] === 'Set' && source.slice(match.index).match(/^P\s*:\s*Set\s*\(\s*"(\w+)"/);
+      if (key && (OWN_SETTINGS[name] || []).includes(key[1])) continue;
       found.push(`${name}:${lineOf(code, match.index)} P:${match[1]}`);
     }
   }
-  assert.deepEqual(found, []);
+  return found;
+}
+test('settings and the reset only from the window, never through the game\'s pop-ups', async () => {
+  assert.deepEqual(settingChanges(await addonCode()), []);
+  // The two allowed keys let nothing else through: another key, a key held
+  // in a variable, the other file's key, a reset or a commented-out key.
+  const file = (name, source) => ({ name, source, code: codeOnly(source) });
+  assert.deepEqual(settingChanges([
+    file('MinimapButton.lua', 'P:Set("eye", false)\nP:Set(key, 1)\nP:Set("minimap", false)\nP:Reset()\nP:Set(--[[ "minimapAngle" ]] k, 1)\n'),
+    file('Core.lua', 'P:Set("minimapAngle", 1)\nP:Set("minimap", true)\n'),
+    file('Chat.lua', 'P:Set("minimap", true)\n'),
+  ]), ['MinimapButton.lua:1 P:Set', 'MinimapButton.lua:2 P:Set', 'MinimapButton.lua:3 P:Set', 'MinimapButton.lua:4 P:Reset',
+    'MinimapButton.lua:5 P:Set', 'Core.lua:1 P:Set', 'Chat.lua:1 P:Set'], 'only those two keys, each from its own file');
   const window = codeOnly(await read('Window.lua'));
   assert.equal([...window.matchAll(/\bP\s*:\s*Reset\s*\(/g)].length, 1, 'one reset, from the window\'s own Reset button');
 });

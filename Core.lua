@@ -210,8 +210,17 @@ P.COLOUR_HELP = "The colour of your name and BattleTag while private. Game's own
 -- Settings that change how names look: every module hears of a change to
 -- one while private, and re-labels what's showing.
 P.NAME_KEYS = { nameStyle = true, myName = true, myColour = true, myTag = true }
-P.EYE_ROW = { key = "eye", label = "Show a small eye while it's on",
-    desc = "So you know it's working. It hides itself in screenshots, but stream viewers can see it, so you can turn it off." }
+-- The Overview's Extras: the eye and the minimap button, side by side.
+P.EYE_ROW = { key = "eye", label = "Show a small eye",
+    desc = "A small eye at the top of the screen while private mode is on, so you know it's working. It hides itself in "
+        .. "screenshots, but stream viewers can see it, so you can turn it off." }
+P.MINIMAP_ROW = { key = "minimap", label = "Show a minimap button",
+    desc = "Left-click turns private mode on or off, right-click opens these settings, and you can drag it round the minimap. "
+        .. "It hides itself in screenshots." }
+-- Where the minimap button starts: degrees anticlockwise from the minimap's
+-- right, so 180 is its left. A spot of its own, clear of where Squirt's
+-- other addons put theirs.
+P.MINIMAP_ANGLE = 165
 P.RELOAD_NOTE = "Some things only come back fully after a /reload."
 
 -- Every row by its key, and the keys in the window's order.
@@ -231,7 +240,8 @@ end
 local OFF_BY_DEFAULT = { cleanOld = true, whispers = true, gold = true, clock = true, publicChannels = true }
 -- Settings an earlier build had, cleared from the saved variables.
 local RETIRED = { "combatText" }
-P.DEFAULTS = { mode = "key", nameStyle = "class", myName = "", myColour = "game", myTag = "", eye = true }
+P.DEFAULTS = { mode = "key", nameStyle = "class", myName = "", myColour = "game", myTag = "", eye = true, minimap = true,
+    minimapAngle = P.MINIMAP_ANGLE }
 for key, row in pairs(P.ROWS) do
     if row.options then
         P.DEFAULTS[key] = row.default
@@ -255,6 +265,8 @@ local function Valid(key, value)
     if key == "myColour" then return Listed(P.COLOURS, value) end
     if key == "myName" then return type(value) == "string" and #value <= P.NAME_MAX * 4 end
     if key == "myTag" then return type(value) == "string" and #value <= P.TAG_MAX * 4 end
+    -- A number round the circle (never NaN or endless, which fail both).
+    if key == "minimapAngle" then return type(value) == "number" and value >= 0 and value < 360 end
     local row = P.ROWS[key]
     if row and row.options then return Listed(row.options, value) end
     return type(value) == type(default)
@@ -351,8 +363,8 @@ local function Report(name, err)
 end
 P.Report = Report
 
--- Listeners (the window, the eye) hear about every change: a setting's
--- key, "private" or "shot".
+-- Listeners (the window, the eye, the minimap button) hear about every
+-- change: a setting's key, "private", "shot" or "reset".
 local listeners = {}
 function P:Listen(listener)
     listeners[#listeners + 1] = listener
@@ -824,8 +836,15 @@ local function Slash(msg)
         local on = msg == "on" or (msg == "toggle" and not private)
         P:SetPrivate(on, "slash")
         P:Print(private and "Private mode is on." or "Private mode is off.")
+    elseif msg == "minimap" then
+        -- The minimap button's own tick (the Overview's Extras), for when
+        -- it's hidden and the window is hard to reach.
+        P:Set("minimap", not P:Get("minimap"))
+        P:Print(P:Get("minimap") and "The minimap button is back."
+            or ("The minimap button is hidden. " .. P.SLASH .. " minimap brings it back."))
     else
-        P:Print(P.SLASH .. " opens the settings. " .. P.SLASH .. " on, off or toggle turns private mode on or off.")
+        P:Print(P.SLASH .. " opens the settings. " .. P.SLASH .. " on, off or toggle turns private mode on or off. " .. P.SLASH
+            .. " minimap shows or hides the minimap button.")
     end
 end
 

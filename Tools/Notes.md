@@ -2,7 +2,8 @@
 
 Personal and unpublished (no CurseForge, no GitHub remote). By Squirt, original code,
 Interface 16001, Lua 5.1, All Rights Reserved. Settings: `ForeverEnhancedPrivacyDB` (account-wide).
-`/privacy` opens the window; `/privacy on|off|toggle`. Key: Key Bindings > AddOns > Toggle private mode.
+`/privacy` opens the window; `/privacy on|off|toggle`; `/privacy minimap` shows or hides the minimap button.
+Key: Key Bindings > AddOns > Toggle private mode. Minimap button: left-click on/off, right-click the window.
 
 Feasibility research (the safe hook for every surface, what is secret where): the main session's
 `scratchpad/privacy-check-1.json` and `privacy-check-2.json`.
@@ -19,8 +20,9 @@ Feasibility research (the safe hook for every surface, what is secret where): th
 | Social.lua | friends, bnToasts, whoList, roster, news, guildName, mail, groupFinder, calendar |
 | Windows.lua | popups, readyCheck, menus, trade, loot, meter, professions, scoreboard |
 | World.lua | questText, tooltips, craftedBy, zoneText, coords, zonePopups, clock, worldMap, gold |
-| Window.lua | The settings window (the approved mockup: pages, ticks, choices, Overview with your name and made-up BattleTag boxes, preview, footer notes, credit; Reset all settings at the bottom right of the Overview) |
+| Window.lua | The settings window (the approved mockup: pages, ticks, choices, Overview with your name and made-up BattleTag boxes, the eye's and the minimap button's ticks, preview, footer notes, credit; Reset all settings at the bottom right of the Overview) |
 | Eye.lua | The small eye at the top of the screen while private (hidden during screenshots) |
+| MinimapButton.lua | The minimap button (below): private mode on/off, the window, dragged round the minimap, hidden during screenshots |
 | Bindings.xml | The key binding (calls `ForeverEnhancedPrivacy_Toggle()`); loads on its own, not in the TOC |
 
 The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("experimental",
@@ -79,7 +81,8 @@ The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("expe
   first (so it's emptied with the rest), then `P:Reset()`: private mode off through `P:SetPrivate(false, "reset")`
   (every module's Apply(false), every swap, cover and CVar put back, the backups emptied), then every key in
   `ForeverEnhancedPrivacyDB` dropped, so each setting is its default (`P.DEFAULTS`): your name and BattleTag
-  empty, "With its key", class names, the game's own colour, the eye on, every tick and choice as it started.
+  empty, "With its key", class names, the game's own colour, the eye on, the minimap button shown at its first spot,
+  every tick and choice as it started.
   Only `wasOn = false` and `cvarBackup` stay: empty, unless a CVar couldn't be put back (in combat), when its
   original waits there and goes back when the fight ends (the usual combat queue), or at the next login.
   Listeners hear "reset" (the window refreshes every control and the preview, the eye hides), and chat says
@@ -87,6 +90,46 @@ The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("expe
 - Nothing does work while private mode has never been on this session: modules are set up lazily, apart
   from the registrations the feasibility check says to make at load (tooltip post-calls, menu callbacks)
   and mixin hooks, which all return at once while off.
+
+## The minimap button
+
+MinimapButton.lua, added 2026-10-11 (the user: "after this push can you make a button for the privacy one").
+`ForeverEnhancedPrivacyMinimapButton` on `Minimap`, made at PLAYER_LOGIN. Named so EraUI's Clean Minimap can list
+it later (EraUI not changed for it).
+
+- The siblings' look (the cooldown manager's, cooldown pulse's, cursor's and Clam Opener's buttons): 32 wide, a dark
+  circle (TempPortraitAlphaMask), the minimap's gold ring (MiniMap-TrackingBorder), the zoom button's highlight. Inside,
+  this addon's eye (Media/Eye.tga, cropped as Eye.lua does, 16 by 10): in the accent while private mode is on, the
+  window's soft grey while off. It hears every listener notice (private, reset, any setting), so the key, the big
+  button, /privacy on and Reset all show on it at once.
+- Left-click: `P:SetPrivate(not P:Private(), "minimap")`, as the big button: quiet (no chat line), kept over a /reload.
+  Right-click: `P.ToggleWindow()`. A click within .2 s of letting go of a drag is the drag's, so ignored.
+- Drag (left button): follows the cursor round the minimap's edge (`isMoving` set meanwhile, so minimap tidiers don't
+  fade it), saved once let go as `minimapAngle`: degrees anticlockwise from the right, whole numbers, default 165
+  (`P.MINIMAP_ANGLE`: the left edge a little above the middle, clear of the siblings: Clam Opener 200, the cooldown
+  manager 225, the cursor 255, cooldown pulse 285; a button spans about 25 degrees there). Checked at load: a
+  number from 0 up to 360, else the default. A circle (radius: the minimap's width / 2 + 4), as the siblings have it;
+  square minimaps aren't handled (none of the siblings does). `Minimap:HookScript("OnSizeChanged")` keeps it on the edge.
+  Hidden mid-drag (a screenshot), it lets go where it was. Only reads (`GetWidth`, `GetCenter`, `GetEffectiveScale`,
+  `GetFrameLevel`) and that one HookScript on `Minimap`.
+- Hover: a box of its own (the window's dark fill edged in the accent, strata TOOLTIP, never the game's tooltip): the
+  addon's name, "Private mode: on" (on in the accent) or "off", "Left-click: turn it on" (or off), "Right-click:
+  settings", "Drag: move it round the minimap". Fixed words only: never a name, your typed name or BattleTag. It opens
+  toward the middle of the screen, follows a click while hovered, and goes on a drag or when the button hides.
+- Screenshots: hidden from SCREENSHOT_STARTED to SCREENSHOT_SUCCEEDED / SCREENSHOT_FAILED in every mode, as the eye, so a
+  picture never shows it (with "For screenshots" it's gone before private mode comes on). A screenshot never brings it
+  back when its tick is off.
+- Setting `minimap` (default on): the Overview's Extras tick "Show a minimap button", beside the eye's. The column had
+  no room for another row above the key note, and the eye's old label ("Show a small eye while it's on") left no room
+  for a second tick in one row, so the eye's is now "Show a small eye" (when it shows moved into its note). Each tick
+  is as wide as its box and label need (measured as it's built, so in game by the game's font), the room left shared;
+  together they fill the column. `/privacy minimap` flips it and says so in chat (hidden: how to bring it back).
+  Reset all settings brings it back at its first spot.
+- Rules: apart from Window.lua, only MinimapButton.lua (`minimapAngle`, on letting go) and the core's `/privacy
+  minimap` (`minimap`) call `P:Set`; TestRules allows exactly those two keys there and still refuses any other (its own
+  self-check feeds it made-up lines to prove that).
+- The hover box's words are checked to fit it (TestMinimap, at the harness's six units a letter); the cursor's sibling
+  shows the same "Drag: move it round the minimap" in a box as wide, so it fits in game too.
 
 ## The module contract
 
@@ -308,7 +351,9 @@ secrets (a `secret...` unit, `H.SECRET` text) cause no violation, CVars aren't t
 ### The harness (Tools/Harness.lua)
 
 - `H.Environment()`: a fresh game. Build Blizzard's frames and functions after it, then `H.Load(saved, opts)`
-  (`opts.reload` for a /reload, `opts.beforeLogin` to stop after ADDON_LOADED). Returns P.
+  (`opts.reload` for a /reload, `opts.beforeLogin` to stop after ADDON_LOADED). Returns P. Every game has `UIParent`,
+  `Minimap` (sealed, 140 across, so every test makes the minimap button at PLAYER_LOGIN; TestMinimap gives it a
+  `GetCenter` with `rawset` for dragging, and a `GetCursorPosition`), `ChatFrame1` and `GameTooltip`.
 - Blizzard's objects are sealed: a key written on one, a method other than a read (`Get`, `Is`, `Has`,
   `Can`, `Enumerate`, `Num`, `Does`), `HookScript`, a cosmetic setter or a chat history edit
   (`TransformMessages`, `RemoveMessagesByPredicate`) called on one, or a hook on a protected one, is
@@ -353,7 +398,7 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
 - `node Tools/RunTests.mjs`: everything below in one go (each Lua test must end "TestX: N checks
   passed"); exits 1 on any failure.
 - `& 'C:\AddonDev\_Toolchain\lua-check\node_modules\.bin\fengari.cmd' Tools/TestCore.lua` (and TestWindow,
-  each module's Test<Module>.lua)
+  TestMinimap, each module's Test<Module>.lua)
 - `$env:FENGARI='C:\AddonDev\_Toolchain\lua-check\node_modules\fengari'; node --test Tools/TestLuaLimits.mjs`
 - `node --test Tools/TestRules.mjs`
 - `node 'C:\AddonDev\_Toolchain\lua-check\check.js' (Get-ChildItem *.lua, Tools\*.lua)`
@@ -366,7 +411,7 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
   player frame, your tooltip and when you talk in chat (Game's own: gold frame name, your class colour
   as the sender with class colours in chat on, the line's colour with them off).
 - Your BattleTag becomes: the box sits under "Your name becomes" and looks the same; Name colour and Extras
-  below it, the key note clear of the footer. Type a made-up BattleTag (with a "#" and a number) while
+  (the eye's and the minimap button's ticks side by side) below it, the key note clear of the footer. Type a made-up BattleTag (with a "#" and a number) while
   private: both friends windows' headers show it at once (Game's own: the number darker, like the real
   one; each other colour: all of it). 24 letters fit the older window's box and don't run over the newer
   header's status menu. Clicking the copy button's spot copies nothing (no "copied" line in chat). Emptied:
@@ -387,6 +432,15 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
   settings reset at once, names above heads come back when the fight ends.
 - "For screenshots" (experimental): whether the change lands in the captured picture at all.
 - The eye: top centre, out of the way, gone from screenshots.
+- The minimap button: where 165 lands on Forever's minimap (clear of the tracking, mail and zoom buttons and the
+  clock?); the ring lines up as on the siblings; the eye reads clearly purple (on) and grey (off) at that size.
+  Left-click turns private mode on and off (and the big button, key and /privacy on change the eye at once),
+  right-click opens and closes the window, a drag goes round the edge and the spot is kept after a /reload. The hover
+  box: its four lines fit 220 wide, it opens below left of the button, and says on/off right after a click. Print Screen
+  with private mode on and off: the button isn't in the picture (as the eye; check the picture itself). The Extras row:
+  "Show a small eye" and "Show a minimap button" side by side, each label inside its tick, clear of the preview; untick
+  hides the button, `/privacy minimap` brings it back. No errors clicking it in combat (`/console taintLog 0`). Once
+  EraUI's Clean Minimap lists it (not yet), it fades with the others but never mid-drag.
 - A CVar left changed by a crash comes back at the next login.
 - Every CVar-backed setting, with `/console taintLog 0` as usual: tick each one (ownHead, otherHeads,
   timestamps, bubbles, coords, clock), turn private mode on and off a few times (key and "For

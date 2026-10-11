@@ -70,7 +70,8 @@ do
     Equal(P.ROWS.combatText, nil, "healer names are left to the game's own options (a CVar it caches)")
 end
 Equal(table.concat(H.NewGlobals(), " "), "BINDING_HEADER_FEPRIVACY BINDING_NAME_FEPRIVACY_TOGGLE ForeverEnhancedPrivacyDB "
-    .. "ForeverEnhancedPrivacy_Toggle SLASH_FEPRIVACY1", "only its own globals")
+    .. "ForeverEnhancedPrivacyMinimapButton ForeverEnhancedPrivacy_Toggle SLASH_FEPRIVACY1",
+    "only its own globals (the minimap button named, for minimap tidiers)")
 Equal(H.category and H.category.title, "Forever Enhanced Privacy", "listed under Options > AddOns")
 Equal(#H.cvarWrites, 0, "no game setting touched at load")
 Equal(H.Writes(), 0, "nothing of Blizzard's touched at load")
@@ -141,6 +142,7 @@ SlashCmdList.FEPRIVACY("toggle")
 Equal(P:Private(), false, "and off")
 SlashCmdList.FEPRIVACY("what")
 True(H.printed[#H.printed]:find("/privacy on, off or toggle", 1, true), "anything else: how to use it")
+True(H.printed[#H.printed]:find("/privacy minimap shows or hides the minimap button.", 1, true), "the minimap button's command too")
 H.Clear()
 Equal(BINDING_HEADER_FEPRIVACY .. " / " .. BINDING_NAME_FEPRIVACY_TOGGLE, "Forever Enhanced Privacy / Toggle private mode",
     "the key binding's names")

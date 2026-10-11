@@ -1,10 +1,10 @@
 -- The /privacy window: pages down the left, the page on the right and a
 -- footer that explains whatever is under the mouse. The Overview has the
 -- big private mode button, how it turns on, how names look, your own name,
--- a made-up BattleTag, their colour, the eye, and a live preview of sample
--- names. Every other page is drawn from Core.lua's rows, so the modules
--- never touch the window. The Overview's bottom right has Reset all
--- settings, which asks first, inside the window.
+-- a made-up BattleTag, their colour, the eye and the minimap button, and a
+-- live preview of sample names. Every other page is drawn from Core.lua's
+-- rows, so the modules never touch the window. The Overview's bottom right
+-- has Reset all settings, which asks first, inside the window.
 local _, P = ...
 
 local T = P.Theme
@@ -256,13 +256,27 @@ local function BuildColours(window, left)
     window.colours = colours
 end
 
+-- The eye and the minimap button, side by side: the column has no room for
+-- another row above the key note. Each tick is as wide as its box and label
+-- need, and the room left over is shared between them.
 local function BuildExtras(window, left)
     Heading(left, "Extras", 352)
     local eye = T:Tick(left, LEFT_W, P.EYE_ROW.label)
+    local minimap = T:Tick(left, LEFT_W, P.MINIMAP_ROW.label)
+    local eyeNeeds = 32 + (eye.label:GetStringWidth() or 0)
+    local minimapNeeds = 32 + (minimap.label:GetStringWidth() or 0)
+    local spare = math.max(0, LEFT_W - GAP - eyeNeeds - minimapNeeds)
+    local eyeW = math.floor(eyeNeeds + spare / 2 + .5)
+    eye:SetWidth(eyeW)
     eye:SetPoint("TOPLEFT", 0, -370)
     eye:SetScript("OnClick", function() P:Set("eye", not P:Get("eye")) end)
     window:Hint(eye, P.EYE_ROW.label, P.EYE_ROW.desc)
     window.eyeRow = eye
+    minimap:SetWidth(LEFT_W - GAP - eyeW)
+    minimap:SetPoint("TOPLEFT", eyeW + GAP, -370)
+    minimap:SetScript("OnClick", function() P:Set("minimap", not P:Get("minimap")) end)
+    window:Hint(minimap, P.MINIMAP_ROW.label, P.MINIMAP_ROW.desc)
+    window.minimapRow = minimap
     local keyNote = T:Text(left, "GameFontHighlightSmall", C.muted)
     keyNote:SetPoint("TOPLEFT", 0, -412)
     keyNote:SetWidth(LEFT_W)
@@ -441,6 +455,7 @@ local function RefreshOverview(window)
         end
     end
     window.eyeRow:SetChecked(P:Get("eye"))
+    window.minimapRow:SetChecked(P:Get("minimap"))
     RefreshPreview(window)
 end
 

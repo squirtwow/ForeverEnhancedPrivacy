@@ -18,3 +18,4 @@ Windows.lua
 World.lua
 Window.lua
 Eye.lua
+MinimapButton.lua
