@@ -46,8 +46,8 @@ local DB = function() return ForeverEnhancedPrivacyDB end
 Fresh(nil)
 Equal(type(DB()), "table", "saved settings made")
 Equal(P:Private(), false, "private mode starts off")
-Equal(#P.KEYS, 41, "41 settings across the five list pages")
-local OFF = { cleanOld = true, whispers = true, gold = true, clock = true }
+Equal(#P.KEYS, 42, "42 settings across the five list pages")
+local OFF = { cleanOld = true, whispers = true, gold = true, clock = true, publicChannels = true }
 for _, key in ipairs(P.KEYS) do
     local row = P.ROWS[key]
     if not row.options then Equal(P:Get(key), not OFF[key], key .. " starts as the mockup has it") end
@@ -64,7 +64,9 @@ do
     local owners = {}
     for _, row in pairs(P.ROWS) do owners[row.owner] = (owners[row.owner] or 0) + 1 end
     Equal(owners.UnitFrames .. " " .. owners.Chat .. " " .. owners.Social .. " " .. owners.Windows .. " " .. owners.World,
-        "8 7 9 8 9", "each surface module owns its rows")
+        "8 8 9 8 9", "each surface module owns its rows")
+    Equal(tostring(P:Get("publicChannels")) .. " " .. P.ROWS.publicChannels.page .. " " .. P.ROWS.publicChannels.owner,
+        "false chat Chat", "Leave public channels as they are: off to begin with, on the Chat page, Chat's")
     Equal(P.ROWS.combatText, nil, "healer names are left to the game's own options (a CVar it caches)")
 end
 Equal(table.concat(H.NewGlobals(), " "), "BINDING_HEADER_FEPRIVACY BINDING_NAME_FEPRIVACY_TOGGLE ForeverEnhancedPrivacyDB "
@@ -521,6 +523,113 @@ Equal(P:Private(), true, "always: on")
 H.Login(false)
 Equal(P:Private(), true, "a later loading screen changes nothing")
 Equal(H.Problems(), "", "nothing wrong at login")
+
+-- Reset all settings ------------------------------------------------------------------------------------------------------
+
+-- Everything changed, private mode on with CVars changed: a reset puts it all back.
+Fresh({ mode = "always", nameStyle = "hidden", myName = "Shade", myTag = "Fake#9999", myColour = "white", eye = false,
+    chatNames = false, publicChannels = true, instChat = "chat", worldMap = "hide", gold = true, cleanOld = true, combatText = true,
+    someOldKey = "x" })
+do
+    Equal(P:Private(), true, "reset: private mode on from login (always)")
+    Spy()
+    local heard, offFirst = {}, nil
+    P:Listen(function(what)
+        heard[#heard + 1] = what
+        -- When private mode goes off: what's back, and what's still saved.
+        if what == "private" and not offFirst then
+            offFirst = H.cvars.UnitNameOwn .. H.cvars.chatBubbles .. " " .. tostring(next(DB().cvarBackup)) .. " " .. P:Get("myName")
+        end
+    end)
+    local saved = DB()
+    local name = H.BlizzardText("TestResetName", UIParent, "Merrin Lightfoot")
+    P:SwapText("groupFrames", name, "Priest", 1, 1, 1)
+    P:SetCVar("ownHead", "UnitNameOwn", "0")
+    P:SetCVar("bubbles", "chatBubbles", "0")
+    Equal(H.cvars.UnitNameOwn .. H.cvars.chatBubbles, "00", "CVars changed while private")
+    H.Clear()
+    Equal(P:Reset(), true, "a reset")
+    Equal(P:Private(), false, "private mode off")
+    Equal(Log(), "World:Apply(false) Windows:Apply(false) Social:Apply(false) Chat:Apply(false) UnitFrames:Apply(false) Names:Apply(false)",
+        "through the usual path: each module told, last first, and nothing else")
+    Equal(H.Text(name), "Merrin Lightfoot", "every swap put back")
+    Equal(H.cvars.UnitNameOwn .. H.cvars.chatBubbles .. " " .. tostring(next(DB().cvarBackup)), "11 nil", "every CVar back, no backup left")
+    Equal(offFirst, "11 nil Shade", "private mode off and every CVar back first, before any setting is dropped")
+    for _, key in ipairs(P.KEYS) do Equal(P:Get(key), P.DEFAULTS[key], key .. " back to its default") end
+    for key, value in pairs(P.DEFAULTS) do Equal(P:Get(key), value, key .. ": the default") end
+    Equal(P:Get("mode") .. " " .. P:Get("nameStyle") .. " [" .. P:Get("myName") .. "][" .. P:Get("myTag") .. "] " .. P:Get("myColour")
+        .. " " .. tostring(P:Get("eye")), "key class [][] game true", "with its key, class names, no name or BattleTag, the eye on")
+    do
+        local left = {}
+        for key, value in pairs(DB()) do left[#left + 1] = key .. "=" .. (type(value) == "table" and "{}" or tostring(value)) end
+        table.sort(left)
+        Equal(table.concat(left, " "), "cvarBackup={} wasOn=false", "nothing else kept in the saved settings")
+    end
+    Equal(rawequal(DB(), saved), true, "the same saved table, emptied (never swapped for a new one)")
+    Equal(table.concat(heard, " "), "private reset", "the window and the eye hear of it")
+    Equal(table.concat(H.printed, " | "), "|cffb07df0Forever Enhanced Privacy|r: Settings reset.", "one short line in chat")
+    H.Clear()
+    Equal(P:Set("chatNames", false), true, "settings change as usual after")
+    P:Set("chatNames", true)
+    Equal(DB().chatNames, true, "and save")
+    -- With nothing changed and private mode off: still a reset, quietly.
+    Equal(P:Reset(), true, "a second reset")
+    Equal(Log(), "", "private mode already off: no module told")
+    Equal(DB().chatNames, nil, "the saved value dropped again")
+    Equal(#H.printed, 1, "said once")
+    H.Clear()
+    Equal(H.Problems(), "", "nothing wrong resetting")
+end
+-- The next login after a reset: off, with its key.
+H.Environment()
+P = H.Load({ cvarBackup = {}, wasOn = false }, { reload = true })
+Equal(P:Private(), false, "after a reset, a /reload: off")
+
+-- In combat: the settings reset at once, the CVars wait for the fight to end, their originals kept till then.
+Fresh(nil)
+do
+    P:Set("myName", "Shade")
+    P:Set("publicChannels", true)
+    P:SetPrivate(true)
+    P:SetCVar("ownHead", "UnitNameOwn", "0")
+    H.Combat(true)
+    local writes = #H.cvarWrites
+    P:Reset()
+    Equal(P:Private() and "on" or "off", "off", "in combat: private mode off")
+    Equal(P:Get("myName") .. "|" .. tostring(P:Get("publicChannels")), "|false", "every setting reset at once")
+    Equal(#H.cvarWrites .. " " .. H.cvars.UnitNameOwn, writes .. " 0", "no CVar touched in the fight")
+    Equal(DB().cvarBackup.UnitNameOwn, "1", "its original kept to put back")
+    Equal(DB().wasOn, false, "and private mode not due back after a /reload")
+    H.Combat(false)
+    Equal(H.cvars.UnitNameOwn .. " " .. tostring(next(DB().cvarBackup)), "1 nil", "put back once it ends, the backup emptied")
+    H.Clear()
+    Equal(H.Problems(), "", "no CVar changed in combat")
+end
+-- A backup left from a crash survives a reset in a fight, and goes back at the next login.
+H.Environment()
+H.cvars.chatBubbles = "0"
+P = H.Load({ cvarBackup = { chatBubbles = "1" }, wasOn = false }, { beforeLogin = true })
+H.Combat(true)
+P:Reset()
+Equal(DB().cvarBackup.chatBubbles, "1", "a reset keeps an original still waiting to go back")
+H.Combat(false)
+H.Login(false)
+Equal(H.cvars.chatBubbles .. " " .. tostring(next(DB().cvarBackup)), "1 nil", "and the login puts it back")
+H.Clear()
+-- Private mode on and reset in the same fight: the change still waiting is dropped, nothing written after.
+Fresh(nil)
+do
+    H.Combat(true)
+    P:SetPrivate(true)
+    P:SetCVar("ownHead", "UnitNameOwn", "0")
+    local writes = #H.cvarWrites
+    P:Reset()
+    H.Combat(false)
+    Equal(#H.cvarWrites - writes .. " " .. H.cvars.UnitNameOwn .. " " .. tostring(next(DB().cvarBackup)), "0 1 nil",
+        "on and reset in one fight: no CVar written when it ends, nothing saved")
+    H.Clear()
+    Equal(H.Problems(), "", "nothing wrong")
+end
 
 -- Screenshots and the eye ---------------------------------------------------------------------------------------------
 

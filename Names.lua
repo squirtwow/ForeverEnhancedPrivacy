@@ -258,8 +258,9 @@ local function FirstOnly(entry, seg, s)
     if not SentenceStart(seg, s) then return select(2, next(entry)) end
 end
 
--- Swaps names in plain text (no escape codes in it).
-local function SwapPlain(seg, me, colour, myFirst, mySurname)
+-- Swaps names in plain text (no escape codes in it). mineOnly: yours alone
+-- (someone noted whose full name starts with your first name stays theirs).
+local function SwapPlain(seg, me, colour, myFirst, mySurname, mineOnly)
     local out, pos, changed = {}, 1, false
     while true do
         local s, e = seg:find("[%a\128-\255]+", pos)
@@ -268,6 +269,10 @@ local function SwapPlain(seg, me, colour, myFirst, mySurname)
         local entry = byFirst[word]
         local full, stop, isMe
         if entry then full, stop = FullAt(seg, e, entry) end
+        -- Yours alone: someone else's full name (noted) is left whole, and a
+        -- first name alone is never theirs.
+        local keep = mineOnly and stop
+        if mineOnly then entry = nil end
         if not stop and word == myFirst then
             isMe, stop = true, e
             if mySurname then
@@ -279,7 +284,10 @@ local function SwapPlain(seg, me, colour, myFirst, mySurname)
             full = FirstOnly(entry, seg, s)
             if full then stop = e end
         end
-        if stop then
+        if keep then
+            out[#out + 1] = seg:sub(pos, stop)
+            pos = stop + 1
+        elseif stop then
             out[#out + 1] = seg:sub(pos, s - 1)
             out[#out + 1] = Label(full, isMe, me, colour)
             pos, changed = stop + 1, true
@@ -315,18 +323,19 @@ end
 -- first name) and every noted name, as whole words only, never inside a
 -- link's data or an escape code. me: words for you instead of your label
 -- (quest text's "adventurer", say). colour: wrap labels in their colour.
+-- mineOnly: your name alone, every other name left (chat's public channels).
 -- Returns the text and whether it changed. A secret comes back untouched.
-function P:ReplaceNames(text, me, colour)
+function P:ReplaceNames(text, me, colour, mineOnly)
     if IsSecret(text) or type(text) ~= "string" or text == "" then return text, false end
     local myFirst, myFull = P:MyNames()
-    if not myFirst and next(byFirst) == nil then return text, false end
+    if not myFirst and (mineOnly or next(byFirst) == nil) then return text, false end
     local mySurname = myFull and myFull ~= myFirst and myFull:sub(#myFirst + 2) or nil
     local out, i, n, changed = {}, 1, #text, false
     while i <= n do
         local bar = text:find("|", i, true)
         local stop = bar and bar - 1 or n
         if stop >= i then
-            local seg, did = SwapPlain(text:sub(i, stop), me, colour, myFirst, mySurname)
+            local seg, did = SwapPlain(text:sub(i, stop), me, colour, myFirst, mySurname, mineOnly)
             out[#out + 1] = seg
             changed = changed or did
         end

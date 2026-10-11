@@ -204,6 +204,25 @@ function T:Input(parent, width, placeholder)
     return input
 end
 
+-- A plain button sized to its label, the edge lit while the mouse is on it.
+-- accent: filled with the accent, for the one that does the deed.
+function T:Button(parent, label, accent)
+    local C = self.C
+    local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    button.label = self:Text(button, "GameFontHighlight", accent and C.onAccent or C.text)
+    button.label:SetPoint("CENTER")
+    button.label:SetJustifyH("CENTER")
+    button.label:SetText(label)
+    -- The font's dark shadow smears dark text on the accent.
+    if accent then button.label:SetShadowColor(0, 0, 0, 0) end
+    button:SetSize(math.max(80, math.floor((button.label:GetStringWidth() or 60) + 28 + .5)), 30)
+    local edge = accent and self.ACCENT or C.buttonEdge
+    self:Flat(button, accent and self.ACCENT or C.button, edge)
+    button:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(C.text[1], C.text[2], C.text[3], 1) end)
+    button:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(edge[1], edge[2], edge[3], 1) end)
+    return button
+end
+
 -- A small square button (the window's close).
 function T:Square(parent, label)
     local C = self.C

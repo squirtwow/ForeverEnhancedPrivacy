@@ -15,11 +15,11 @@ Feasibility research (the safe hook for every surface, what is secret where): th
 | Theme.lua | The window's look (palette from the mockup, ticks, options, choice rows, text box, scroll) |
 | Names.lua | What names become (all the naming helpers below), and the "Names" module that notes group, guild and friends names while private |
 | UnitFrames.lua | playerFrame, charTitles, ownHead, targetFrames, groupFrames, nameplates, otherHeads, petNames |
-| Chat.lua | chatNames, instChat, whispers, cleanOld, channels, timestamps, bubbles |
+| Chat.lua | chatNames, publicChannels, instChat, whispers, cleanOld, channels, timestamps, bubbles |
 | Social.lua | friends, bnToasts, whoList, roster, news, guildName, mail, groupFinder, calendar |
 | Windows.lua | popups, readyCheck, menus, trade, loot, meter, professions, scoreboard |
 | World.lua | questText, tooltips, craftedBy, zoneText, coords, zonePopups, clock, worldMap, gold |
-| Window.lua | The settings window (the approved mockup: pages, ticks, choices, Overview with your name and made-up BattleTag boxes, preview, footer notes, credit) |
+| Window.lua | The settings window (the approved mockup: pages, ticks, choices, Overview with your name and made-up BattleTag boxes, preview, footer notes, credit; Reset all settings at the bottom right of the Overview) |
 | Eye.lua | The small eye at the top of the screen while private (hidden during screenshots) |
 | Bindings.xml | The key binding (calls `ForeverEnhancedPrivacy_Toggle()`); loads on its own, not in the TOC |
 
@@ -68,6 +68,22 @@ The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("expe
   tab, titles, menus, meter rows, the scoreboard, roster and calendar never colour names, so the choice
   doesn't show there. No colour picker (the game's must not be borrowed). With no typed name or BattleTag
   it changes nothing. The preview follows it (Game's own: the colour your real name has in the preview).
+- Reset all settings (added 2026-10-11): a button at the bottom right of the Overview, under the preview
+  and as wide as it (moved there from the foot of Good to know the same day; the user: "i kinda want it in a
+  spot they can see, not have to dig for it"), styled like the window's own buttons (`T:Button`). It asks
+  first, inside the window: the button gives way to "Are you sure?", Reset (in the accent), then Cancel at the
+  right where the button's end was. Reset ignores clicks for half a second after the question shows
+  (RESET_WAIT), so a double click on the button can't reset. Never one of the game's pop-ups
+  (`StaticPopupDialogs` is Blizzard's table; writing in it taints). Cancel, another page or closing the window
+  (Escape too) puts the button back; a setting changing meanwhile doesn't. Reset saves a name being typed
+  first (so it's emptied with the rest), then `P:Reset()`: private mode off through `P:SetPrivate(false, "reset")`
+  (every module's Apply(false), every swap, cover and CVar put back, the backups emptied), then every key in
+  `ForeverEnhancedPrivacyDB` dropped, so each setting is its default (`P.DEFAULTS`): your name and BattleTag
+  empty, "With its key", class names, the game's own colour, the eye on, every tick and choice as it started.
+  Only `wasOn = false` and `cvarBackup` stay: empty, unless a CVar couldn't be put back (in combat), when its
+  original waits there and goes back when the fight ends (the usual combat queue), or at the next login.
+  Listeners hear "reset" (the window refreshes every control and the preview, the eye hides), and chat says
+  "Forever Enhanced Privacy: Settings reset." once. The key binding is the game's (Key Bindings), so it stays.
 - Nothing does work while private mode has never been on this session: modules are set up lazily, apart
   from the registrations the feasibility check says to make at load (tooltip post-calls, menu callbacks)
   and mixin hooks, which all return at once while off.
@@ -125,7 +141,7 @@ end
 - `P:Get(key)`: a setting's value (`"names"|"chat"|"leave"` for instChat, `"hide"|"leave"` for worldMap,
   `"class"|"player"|"hidden"` for nameStyle, the typed `myName` and `myTag`, `"game"|"accent"|"class"|"white"`
   for myColour, booleans for ticks).
-- Never call `P:Set` from a module (the window does that).
+- Never call `P:Set` or `P:Reset` from a module (the window does that).
 
 ### Changing things, so they can be put back
 
@@ -204,14 +220,15 @@ secret.
   dropped; never your own, a secret or "Unknown"); returns the name as noted. The Names module notes
   your group, guild and friends while private; Chat notes senders it sees.
 - `P:ClassOf(name)`: the noted class file, or nil.
-- `P:ReplaceNames(text [, me [, colour]])`: swaps every known name in text: yours (full name, then
+- `P:ReplaceNames(text [, me [, colour [, mineOnly]]])`: swaps every known name in text: yours (full name, then
   first name) and every noted name (the full name anywhere; the first name alone anywhere for your
   current group, but for anyone else only when it doesn't start a sentence or a line, so a guildmate
   called "Will Ashford" never turns "Will you tank?" into "Mage you tank?"), whole words only, never inside a
   link's data (`|Hplayer:...|h` stays, so whispers still work), a texture, an atlas, a colour code or a
   Battle.net `|K...|k` name. `me`: your own words for you instead of your label (quest text's
-  "adventurer"). `colour`: wrap each label in its colour code. Returns `text, changed`; a secret comes
-  back untouched with `false`.
+  "adventurer"). `colour`: wrap each label in its colour code. `mineOnly`: your name alone, every noted
+  name left (Chat's public channels); a noted full name that starts with your first name ("Zriel Blackmoor" when
+  you're Zriel Gustbellow) is left whole, never taken for yours. Returns `text, changed`; a secret comes back untouched with `false`.
 - `P:ClassName(classFile)`, `P:ClassColour(classFile)`, `P:Colourise(label, r, g, b)`.
 
 ### Safety rules (Forever)
@@ -359,6 +376,15 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
   preview chat lines wrap inside their box, footer notes fit two lines), the heart tinted purple, Escape
   closes it, Options > AddOns opens it.
 - A /reload while private keeps it on (PLAYER_ENTERING_WORLD's isReloadingUi on Forever).
+- Reset all settings: bottom right of the Overview, under the preview, looks like the window's own buttons.
+  Click it: "Are you sure?" with Reset and Cancel in its place (they fit, the footer's note follows the mouse).
+  Double-click the button: nothing resets (Reset ignores clicks for half a second). Cancel, another page, Escape and the close button
+  each put the button back. Then change a few things (private on with names above heads and bubbles hidden,
+  a typed name and BattleTag, another mode, colour and name style, some ticks) and Reset: private mode off,
+  names above heads and bubbles back, every page's ticks and choices and the Overview as on a first install,
+  both boxes empty, the eye gone, one "Settings reset." line in chat, no Lua errors (`/console taintLog 0`).
+  /reload after: still off, nothing changed back. The key binding still works. Once in combat too: the
+  settings reset at once, names above heads come back when the fight ends.
 - "For screenshots" (experimental): whether the change lands in the captured picture at all.
 - The eye: top centre, out of the way, gone from screenshots.
 - A CVar left changed by a crash comes back at the next login.
@@ -419,24 +445,26 @@ Needs an in-game check:
 
 ### Chat
 
-Chat.lua owns chatNames, instChat, whispers, cleanOld, channels, timestamps and bubbles. It also does the
+Chat.lua owns chatNames, publicChannels, instChat, whispers, cleanOld, channels, timestamps and bubbles. It also does the
 chat side of rows owned elsewhere: loot and roll lines follow `loot`, ready check lines follow `chatNames`
 (and `instChat` in dungeons), the guild message of the day in chat follows `news`, and Battle.net
 came-online lines follow `chatNames` or `bnToasts`. Test: `Tools/TestChat.lua` (Blizzard's chat stood in for inside the test file:
 chat frames with their history and the secure mixin's TransformMessages / RemoveMessagesByPredicate, the
-message handler, edit box headers, whisper windows; nothing added to the harness).
+message handler (as Forever's: only players' lines keep their event and the event's own values; the game's own
+lines, joins and /chatlist are added bare), edit box headers, whisper windows; nothing added to the harness).
 
 | Surface | How | Key |
 | --- | --- | --- |
 | Sender names (say, party, guild, channels, whispers, emotes, achievements) | `ChatFrameUtil.AddSenderNameFilter`: the class label by the sender's GUID (noted with `P:Learn`), you by name or GUID, Battle.net senders "Player". The link keeps the real name, so whisper and invite still work | chatNames |
 | Names in text, NPC lines (`$N`), system lines, rolls, joins, duels, ready checks | `AddMessageEventFilter` on each event: the game's own lines matched against their global strings (templates, `%1$s` order kept, only the values that are names, a capture must look like "First" or "First Surname"); player links show a label (data kept); `P:ReplaceNames` for known names; `\|K...\|k` Battle.net names | chatNames |
+| Public channels: General, Trade (and its Services and Local channels) and LookingForGroup | With the tick on, other players' names there are left as the game sends them (the sender filter returns nothing for them, the text and /chatlist swap only your name: `SwapMine`, `P:ReplaceNames(..., mineOnly)`, `SwapList(list, true)`, join notices only yours); your own name is still swapped (you talking, your name or a link to you in their lines; someone noted whose full name starts with your first name is left whole), and Battle.net `\|K` names (your friends') still hidden. Senders are still noted (`P:Learn`), so their names stay hidden where chat stays private. Told apart by the event's own values, never by the name shown: the channel id (arg7, zoneChannelID, never secret) in `PUBLIC_IDS`, else, when the id is 0 or missing, the base name (arg9) in `PUBLIC_NAMES`. Ids from the game's ChatChannels table (wago.tools, 2026-10-11): `wow_classic_beta` (Forever's client folder): General 1, Trade 2, LocalDefense 22, LookingForGroup 26, Newcomer Chat 32, Trade (Services) 42, HardcoreDeaths 44, Trade (Local) 46; Classic Era: LookingForGroup 24, GuildRecruitment 25, Services 45. Public: 1, 2, 24, 26, 42, 45, 46. Custom channels (id 0, a name of their own), LocalDefense, Newcomer Chat and every other channel stay private. Channel names still follow `channels`; nothing changes with chatNames off | publicChannels (off by default; only with chatNames) |
 | Loot and roll lines (CHAT_MSG_LOOT) | the same, templates for LOOT_ITEM, LOOT_ROLL_*, CREATED_ITEM | loot (Windows' row) |
 | Whispers, Battle.net whispers, AFK/DND replies | dropped by the filter; locked ones (dungeons) taken out by the OnEvent hook | whispers |
 | Battle.net "came online/offline", removed, broadcast lines | dropped (the game builds the name from the account itself, so it can't be swapped); the window's preview shows the line gone | chatNames or bnToasts |
 | Guild message of the day (printed straight into chat by ChatFrameUtil.DisplayGMOTD, no chat event, no filter) | the OnEvent hook after GUILD_MOTD / UPDATE_CHAT_WINDOWS, and at turn-on: `TransformMessages` makes it "Guild Message of the Day: (hidden)". One way | news (Social's row) |
 | Channel names, "Changed Channel" notice, /chatlist, join/leave notices | arg4 "1. General - Zone" to "1. General" (the number must stay: the game needs it). LocalDefense lines are dropped (they say where you are) | channels |
 | Dungeons, raids, battlegrounds | the game makes those lines secret and skips addon filters. `HookScript("OnEvent")` on each chat frame: after an event with a secret value, `TransformMessages` swaps every secret line in that frame (the whole line, older ones too: the game can't say which is new) for "[Party] (hidden)" (Hide names) or `RemoveMessagesByPredicate` takes them out (Hide chat). Only `issecretvalue` is asked of them. One way, and never while `P:ShotOnly()` | instChat |
-| Lines already in chat | when private turns on (or the tick goes on while private): names, links and channel zones cleaned, locked lines hidden (instChat), old whispers taken out (with Hide whispers). One way; nothing of this happens without the tick | cleanOld |
+| Lines already in chat | when private turns on (or the tick goes on while private): names, links and channel zones cleaned, locked lines hidden (instChat), old whispers taken out (with Hide whispers). With publicChannels ticked, a public channel's old line is cleaned as a new one is (only your name, the zone still stripped), told apart by the event and its values the game keeps with a player's line (`GetMessageInfo`'s 8th and 9th: `event`, `eventArgs`, a `SafePack` of the event's own values, only read; checked in Forever's ChatFrameOverrides). Join and /chatlist lines are added bare (no event, no values), so an old one in a public channel is cleaned in full (its channel is only known by the translated name shown). One way; nothing of this happens without the tick | cleanOld |
 | Edit box header ("Tell Name:", your name on /e, "[1. General - Zone]:") | `hooksecurefunc(header, "SetFormattedText")` on each ChatFrameNEditBoxHeader: our text is in before UpdateHeader measures it. The text is worked out from the box's GetChatType / GetTellTarget / GetChannelTarget, never from the header | chatNames, channels |
 | Whisper tabs, minimised buttons, dock overflow list | post-hooks on FCF_SetWindowName, FCF_CreateMinimizedFrame, FCFDockOverflowListButton_SetValue; FCF_OpenTemporaryWindow hooks new windows (with any of instChat, whispers, chatNames, channels) and, a frame later, takes locked lines out of whisper windows (the game resends the whisper into the new window through GetScript, which may skip hooks) | whispers, else chatNames |
 | Timestamps | `P:SetCVar` showTimestamps "none" | timestamps |
@@ -446,6 +474,12 @@ message handler, edit box headers, whisper windows; nothing added to the harness
   hooks stay (they can't be removed) and return at once.
 - Labels in chat text are coloured and never hold a "%": NPC and achievement lines are format strings and an
   emote's link is a gsub replacement. A "%" typed in "Your name becomes" is dropped in chat only.
+- publicChannels changing while private: new lines follow it at once (the filters read it each time); lines
+  already printed stay as they were, as with every other chat setting. Locked channel lines (an encounter in
+  the open world) are instChat's as ever. The Chat page lists it right under "Swap names in chat": the two
+  columns fill row by row, so the rows are in the order chatNames, whispers, publicChannels, cleanOld, then
+  the instChat choice on its own row (moved below them on 2026-10-11 so the new tick could sit under
+  chatNames). The preview's General line follows it (the sample sender's real name, the zone still gone).
 - A /wave (TEXT_EMOTE): the sender's own name is left in the text, since the game swaps it for their link.
 - Template captures are never noted with `P:Learn` (a wrong match would teach a word as a name); player
   links and senders are.
@@ -470,6 +504,18 @@ Needs an in-game check:
 - The edit box: /w, /e and /1 show the swapped header with no big gap, and slash commands and macros typed in
   chat still work afterwards (the edit box is security-sensitive).
 - Channel names arrive as "1. General - Elwynn Forest" on Forever, and LocalDefense is named "LocalDefense".
+- Seen in game 2026-10-11: Forever's channel BASE name (the event's 9th value) carries the zone too ("General - Darkshore"),
+  and General's channel id was not 1, so the first public-channels build never matched and General names stayed swapped.
+  Public channels and the LocalDefense drop now go by the base name's part before " - " (Chat.lua BaseOf); the id only
+  counts when the game sends no base name.
+- Leave public channels as they are: on Forever, `/run local f=CreateFrame("Frame") f:RegisterEvent("CHAT_MSG_CHANNEL")
+  f:SetScript("OnEvent",function(_,_,...) print(select(7,...),select(9,...)) end)` prints each channel line's id and
+  base name: General 1, Trade 2, LookingForGroup 26 (or 24) expected, a custom channel 0. Then, private with
+  the tick on: Trade, General and Looking for Group show real senders and names, your own name is still
+  swapped there (you talking, someone saying your name), say, party, guild and whispers still swapped, a
+  custom channel still swapped, "General - Elwynn Forest" still shortened with Channel names. Untick it while
+  private: new lines swapped, old ones as they were. With Clean lines already in chat ticked, turning
+  private on leaves Trade's old lines' names (yours swapped). If an id differs, add it to `PUBLIC_IDS`.
 - Loot and roll lines match their global strings on Forever (any missing string is skipped quietly).
 - showTimestamps "none" stops timestamps at once (the chat reads it through Settings.GetValue).
 - NPC speech bubbles obey chatBubbles.

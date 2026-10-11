@@ -74,18 +74,23 @@ P.SECTIONS = {
     },
     chat = {
         { title = "Names", rows = {
+            -- Two columns, filled row by row: "Leave public channels as they
+            -- are" sits right under "Swap names in chat", the choice below both.
             { key = "chatNames", owner = "Chat", label = "Swap names in chat",
                 desc = "Names in every channel, emotes and system lines. Works in the open world and cities." },
+            { key = "whispers", owner = "Chat", label = "Hide whispers",
+                desc = "Whispers and Battle.net whispers stay out of chat while private mode is on. A whisper can still open "
+                    .. "an empty whisper tab." },
+            { key = "publicChannels", owner = "Chat", label = "Leave public channels as they are",
+                desc = "Names in Trade, General and Looking for Group show as normal, so you can read who's selling and "
+                    .. "chatting. Your own name is still swapped." },
+            { key = "cleanOld", owner = "Chat", label = "Clean lines already in chat",
+                desc = "Names already in chat are cleaned when you turn it on. They don't come back after." },
             { key = "instChat", owner = "Chat", label = "In dungeons and raids", default = "names",
                 options = { { key = "names", label = "Hide names" }, { key = "chat", label = "Hide chat" },
                     { key = "leave", label = "Leave as is" } },
                 desc = "The game locks chat in dungeons, raids and battlegrounds. Hide names turns each locked line into "
                     .. "\"[Party] (hidden)\" and Hide chat takes it out. Those lines don't come back." },
-            { key = "whispers", owner = "Chat", label = "Hide whispers",
-                desc = "Whispers and Battle.net whispers stay out of chat while private mode is on. A whisper can still open "
-                    .. "an empty whisper tab." },
-            { key = "cleanOld", owner = "Chat", label = "Clean lines already in chat",
-                desc = "Names already in chat are cleaned when you turn it on. They don't come back after." },
         } },
         { title = "Giveaways", rows = {
             { key = "channels", owner = "Chat", label = "Channel names",
@@ -223,7 +228,7 @@ end
 
 -- Settings -------------------------------------------------------------------------------
 
-local OFF_BY_DEFAULT = { cleanOld = true, whispers = true, gold = true, clock = true }
+local OFF_BY_DEFAULT = { cleanOld = true, whispers = true, gold = true, clock = true, publicChannels = true }
 -- Settings an earlier build had, cleared from the saved variables.
 local RETIRED = { "combatText" }
 P.DEFAULTS = { mode = "key", nameStyle = "class", myName = "", myColour = "game", myTag = "", eye = true }
@@ -781,6 +786,24 @@ function P:Set(key, value)
         SayReloadNote()
     end
     Notify(key)
+    return true
+end
+
+-- "Reset all settings" (the Overview, after the window asks). Private mode
+-- goes off first, the usual way, so everything it changed is put back; then
+-- every saved setting is dropped, so each is its default again (your name and
+-- BattleTag empty, with its key). Only CVar originals still waiting to go back
+-- (in a fight) are kept, so they go back once it ends. The key binding is the
+-- game's, so it stays.
+function P:Reset()
+    if not loaded then return false end
+    P:SetPrivate(false, "reset")
+    local backup = db.cvarBackup
+    for key in pairs(db) do db[key] = nil end
+    db.cvarBackup = type(backup) == "table" and backup or {}
+    db.wasOn = false
+    Notify("reset")
+    P:Print("Settings reset.")
     return true
 end
 

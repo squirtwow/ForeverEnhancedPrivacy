@@ -1,9 +1,9 @@
--- Chat: names and giveaways in chat. Owns chatNames, instChat, whispers,
--- cleanOld, channels, timestamps and bubbles. It also does the chat side of
--- rows owned elsewhere: loot and roll lines follow the loot tick, ready
--- check lines follow chatNames, as the readyCheck row says, the guild
--- message of the day in chat follows the news tick, and Battle.net "came
--- online" lines follow chatNames or bnToasts.
+-- Chat: names and giveaways in chat. Owns chatNames, publicChannels,
+-- instChat, whispers, cleanOld, channels, timestamps and bubbles. It also
+-- does the chat side of rows owned elsewhere: loot and roll lines follow the
+-- loot tick, ready check lines follow chatNames, as the readyCheck row says,
+-- the guild message of the day in chat follows the news tick, and Battle.net
+-- "came online" lines follow chatNames or bnToasts.
 --
 -- How, from Forever's own chat code (the feasibility notes):
 -- - Sender names: Blizzard's sender name filter. The link keeps the real
@@ -20,6 +20,10 @@
 -- - Lines already in chat (cleanOld): the same two, when private mode turns
 --   on, and only with cleanOld ticked. One way: they don't come back. While
 --   private mode is on just for a screenshot, nothing one-way happens at all.
+-- - Public channels (publicChannels): in General, Trade and LookingForGroup,
+--   told apart by the game's own channel id or base name in the event's
+--   values (never by the name shown), other players' names are left as the
+--   game sends them, new lines and old; your own name is still swapped.
 -- - The edit box header ("Tell Name:", your name on /e, "[1. General -
 --   Zone]:"): a post-hook on each header's SetFormattedText, so the box
 --   measures our text. Whisper tabs: post-hooks on the floating chat frame
@@ -201,14 +205,14 @@ local function Delimiter()
     return delimiter
 end
 
--- "Name, *Name, Name": each name swapped, marks kept.
-local function SwapList(list)
+-- "Name, *Name, Name": each name swapped (mineOnly: yours alone), marks kept.
+local function SwapList(list, mineOnly)
     local delimiter, parts, start = Delimiter(), {}, 1
     repeat
         local s, e = list:find(delimiter, start, true)
         local entry = list:sub(start, s and s - 1 or #list)
         local lead, mark, name, tail = entry:match("^(%s*)([%*@%+]*)(.-)(%s*)$")
-        if Plausible(name) then entry = lead .. mark .. LabelFor(name) .. tail end
+        if Plausible(name) and (not mineOnly or P:IsMyName(name)) then entry = lead .. mark .. LabelFor(name) .. tail end
         parts[#parts + 1] = entry
         start = e and e + 1
     until not s
@@ -355,7 +359,55 @@ local function SwapChat(text, templates)
     if out ~= text then return out end
 end
 
+-- A public channel's line: your own name alone, as a player link or in the
+-- text (and Battle.net names, which are your friends'); everyone else's is
+-- left. Returns the new text, or nil when nothing changed.
+local function SwapMyLink(head, data, shown)
+    local name = Text(data:match("^([^:]+)"))
+    if not name or not P:IsMyName(name) then return nil end
+    return head .. Bracketed(shown, MyText()) .. "|h"
+end
+
+local function SwapMine(text)
+    if not Text(text) then return nil end
+    local out = text:gsub("(|HBN[pP]layer%a*:.-|h)(.-)|h", SwapFriendLink)
+    out = out:gsub("(|H[pP]layer%a*:([^|]*)|h)(.-)|h", SwapMyLink)
+    out = SwapKStrings((P:ReplaceNames(out, MyText(), true, true)))
+    if out ~= text then return out end
+end
+
 -- Channels ---------------------------------------------------------------------------------------
+
+-- Public channels ("Leave public channels as they are"): General, Trade and
+-- LookingForGroup. Told apart by the channel's base name (the event's 9th
+-- value), never the name shown. Forever sends the base name with the zone on
+-- the end ("General - Darkshore", seen in game 2026-10-11, where its channel
+-- id didn't match the game's list), so the part before " - " counts. Only
+-- when the game gives no base name, by the channel id (the 7th; the game's
+-- list: General 1, Trade 2, LookingForGroup 26 (24 on Classic Era), Trade
+-- (Services) 42 (Services 45 on Classic Era), Trade (Local) 46). Custom
+-- channels, LocalDefense and every other channel stay private.
+local PUBLIC_IDS = { [1] = true, [2] = true, [24] = true, [26] = true, [42] = true, [45] = true, [46] = true }
+local PUBLIC_NAMES = { General = true, Trade = true, LookingForGroup = true, ["Trade (Services)"] = true, ["Trade (Local)"] = true }
+
+-- A channel's base name without the zone Forever adds ("General - Darkshore"
+-- is "General"), or nil.
+local function BaseOf(base)
+    base = Text(base)
+    return base and (base:match("^(.-) %- ") or base)
+end
+
+local function IsPublic(id, base)
+    base = BaseOf(base)
+    if base then return PUBLIC_NAMES[base] == true end
+    if IsSecret(id) then return false end
+    return type(id) == "number" and PUBLIC_IDS[id] == true
+end
+
+-- Whether a chat event's values are a public channel's, with its tick on.
+local function PublicLine(a)
+    return P:IsOn("publicChannels") and IsPublic(a[7], a[9])
+end
 
 -- "1. General - Elwynn Forest" becomes "1. General" (the number stays: the
 -- game needs it). base: the channel's own name, when the game gives it.
@@ -428,33 +480,45 @@ local function Toast(a, event)
     if kind and NAMED_TOASTS[kind] then return "discard" end
 end
 
+-- A public channel's line (with its tick on): your own name alone.
+local function Mine(a)
+    if not P:IsOn("chatNames") then return end
+    return Put(a, 1, SwapMine(a[1]))
+end
+
 local function Channel(a, event)
     local changed
     if P:IsOn("channels") then
-        if event == "CHAT_MSG_CHANNEL" and Text(a[9]) == LOCAL_DEFENCE then return "discard" end
+        if event == "CHAT_MSG_CHANNEL" and BaseOf(a[9]) == LOCAL_DEFENCE then return "discard" end
         changed = Put(a, 4, StripZone(a[4], a[9]))
     end
-    if event == "CHAT_MSG_CHANNEL" and Speech(a) then changed = true end
+    if event == "CHAT_MSG_CHANNEL" then
+        local swap = PublicLine(a) and Mine or Speech
+        if swap(a) then changed = true end
+    end
     return changed
 end
 
--- "[1. General] Name joined": the names are values of their own.
+-- "[1. General] Name joined": the names are values of their own (in a public
+-- channel, with its tick on, only yours).
 local function NoticeUser(a)
     local changed = Channel(a, "CHAT_MSG_CHANNEL_NOTICE_USER")
     if P:IsOn("chatNames") then
+        local public = PublicLine(a)
         for _, i in ipairs({ 2, 5 }) do
             local name = Text(a[i])
-            if name and Put(a, i, PlainLabel(name)) then changed = true end
+            if name and (not public or P:IsMyName(name)) and Put(a, i, PlainLabel(name)) then changed = true end
         end
     end
     return changed
 end
 
--- /chatlist: a list of names.
+-- /chatlist: a list of names (in a public channel, with its tick on, only
+-- yours is swapped).
 local function ChannelList(a)
     local changed = Channel(a, "CHAT_MSG_CHANNEL_LIST")
     local list = Text(a[1])
-    if list and P:IsOn("chatNames") and Put(a, 1, SwapList(list)) then changed = true end
+    if list and P:IsOn("chatNames") and Put(a, 1, SwapList(list, PublicLine(a))) then changed = true end
     return changed
 end
 
@@ -506,7 +570,10 @@ local function IsMyGUID(guid)
 end
 
 -- The name shown for whoever is talking. The values after the sender are
--- the event's third onwards, so its GUID (the 12th) comes 10th.
+-- the event's third onwards, so its GUID (the 12th) comes 10th, and its
+-- channel id and base name (the 7th and 9th) 5th and 7th. In a public
+-- channel, with its tick on, only you are swapped (the others still noted,
+-- for their names in lines that stay private).
 local SenderFilter = P:Guard(M, function(event, decorated, _, sender, ...)
     if not P:IsOn("chatNames") then return nil end
     if IsSecret(event) or not SPEAKERS[event] then return nil end
@@ -517,6 +584,9 @@ local SenderFilter = P:Guard(M, function(event, decorated, _, sender, ...)
     if P:IsMyName(sender) or IsMyGUID(guid) then return MyText(decorated) end
     local classFile = ClassFromGUID(guid) or ClassFor(sender)
     P:Learn(sender, classFile)
+    if event == "CHAT_MSG_CHANNEL" and P:IsOn("publicChannels") and IsPublic((select(5, ...)), (select(7, ...))) then
+        return nil
+    end
     return Coloured(P:StyleLabel(classFile))
 end)
 
@@ -663,8 +733,23 @@ end)
 
 -- Lines already in chat (cleanOld) -------------------------------------------------------------------
 
-local function CleanLine(text)
-    if P:IsOn("chatNames") then text = SwapChat(text) or text end
+-- Whether a line already in chat is a public channel's, with its tick on, by
+-- the event and values the game keeps with a player's line (GetMessageInfo's
+-- 8th and 9th; only read). Join and /chatlist lines are kept with neither,
+-- so an old one is cleaned in full.
+local function OldPublic(event, args)
+    if not P:IsOn("publicChannels") or IsSecret(event) or IsSecret(args) or type(args) ~= "table" then return false end
+    if event ~= "CHAT_MSG_CHANNEL" then return false end
+    return IsPublic(Field(args, 7), Field(args, 9))
+end
+
+-- public: a public channel's line, so only your own name goes.
+local function CleanLine(text, public)
+    if P:IsOn("chatNames") then
+        local swapped
+        if public then swapped = SwapMine(text) else swapped = SwapChat(text) end
+        text = swapped or text
+    end
     if P:IsOn("channels") then text = StripChannelTags(text) end
     return text
 end
@@ -674,10 +759,10 @@ local function OldWhisper(_, _, _, _, _, _, _, event)
 end
 
 local pending -- what the predicate just worked out, for the transform that follows it
-local Changed = P:Guard(M, function(message)
+local Changed = P:Guard(M, function(message, _, _, _, _, _, _, event, args)
     pending = nil
     if not Text(message) then return false end
-    local clean = CleanLine(message)
+    local clean = CleanLine(message, OldPublic(event, args))
     if clean == message then return false end
     pending = clean
     return true
@@ -695,10 +780,10 @@ local function CleanFrame(frame)
     if type(count) ~= "number" then return end
     local whispers, names, hideWhispers = false, false, P:IsOn("whispers")
     for i = 1, count do
-        local message, _, _, _, _, _, _, event = frame:GetMessageInfo(i)
+        local message, _, _, _, _, _, _, event, args = frame:GetMessageInfo(i)
         if hideWhispers and OldWhisper(message, nil, nil, nil, nil, nil, nil, event) then
             whispers = true
-        elseif not names and Text(message) and CleanLine(message) ~= message then
+        elseif not names and Text(message) and CleanLine(message, OldPublic(event, args)) ~= message then
             names = true
         end
     end

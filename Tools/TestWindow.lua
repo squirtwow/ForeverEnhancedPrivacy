@@ -101,7 +101,7 @@ do
             True(used <= 320 - 8, key .. "'s label and tag fit its row (" .. used .. ")")
         end
     end
-    Equal(count, 41, "every setting has its row")
+    Equal(count, 42, "every setting has its row")
 end
 -- The Overview's left column stays clear of the preview.
 do
@@ -115,9 +115,19 @@ local function X(control) return S[control].points[1][2] end
 local function Y(control) return S[control].points[1][3] end
 Equal(X(w.controls.playerFrame) .. " " .. X(w.controls.charTitles) .. " " .. X(w.controls.questText), "0 330 0", "ticks fill two columns")
 Equal(Y(w.controls.playerFrame) .. " " .. Y(w.controls.charTitles) .. " " .. Y(w.controls.questText), "-20 -20 -54", "row by row")
-Equal(X(w.controls.instChat), 0, "a choice starts its own row")
-True(Y(w.controls.instChat) < Y(w.controls.chatNames), "after the tick before it")
-Equal(Y(w.controls.whispers), Y(w.controls.instChat) - 38, "and the next tick starts a row below it")
+-- The Chat page: "Leave public channels as they are" right under "Swap names
+-- in chat", the other two ticks beside them, the dungeon choice below.
+do
+    local c = w.controls
+    Equal(X(c.chatNames) .. " " .. Y(c.chatNames) .. " / " .. X(c.publicChannels) .. " " .. Y(c.publicChannels), "0 -20 / 0 -54",
+        "Leave public channels as they are: right under Swap names in chat")
+    Equal(X(c.whispers) .. " " .. Y(c.whispers) .. " / " .. X(c.cleanOld) .. " " .. Y(c.cleanOld), "330 -20 / 330 -54",
+        "Hide whispers and Clean lines beside them")
+    Equal(X(c.instChat) .. " " .. Y(c.instChat), "0 -88", "a choice starts its own row, below the ticks")
+    Equal(S[H.Find("GIVEAWAYS")].points[1][3] .. " " .. Y(c.channels), "-140 -160", "and the next section starts below it")
+    Equal(H.Text(c.publicChannels.label) .. " " .. tostring(c.publicChannels.tag), "Leave public channels as they are nil",
+        "its label, no tag")
+end
 
 -- Ticks and choices save, and tell the owner while private.
 w:Select("chat")
@@ -141,6 +151,21 @@ Equal(table.concat(told, " "), "true,whispers", "while private, its owner hears 
 whispers:Click()
 w.controls.instChat.options.buttons.names:Click()
 Equal(table.concat(told, " "), "true,whispers true,whispers true,instChat", "for each change")
+-- Leave public channels as they are.
+do
+    local public = w.controls.publicChannels
+    told = {}
+    Equal(public:GetChecked(), false, "Leave public channels as they are starts off")
+    public:Click()
+    Equal(tostring(P:Get("publicChannels")) .. " " .. tostring(public:GetChecked()) .. " " .. table.concat(told, " "),
+        "true true true,publicChannels", "a click ticks it, saves it, and Chat hears")
+    public:Click()
+    Equal(P:Get("publicChannels"), false, "and back")
+    Hover(public)
+    Equal(Note(), WHITE .. "Leave public channels as they are|r  Names in Trade, General and Looking for Group show as normal, so "
+        .. "you can read who's selling and chatting. Your own name is still swapped.", "its note, short and plain")
+    Leave(public)
+end
 P:SetPrivate(false)
 
 -- The footer explains what's under the mouse.
@@ -365,6 +390,15 @@ Equal(S[view.target].colour[1], H.CLASS_COLOURS.WARRIOR.r, "in its colour")
 Equal(Party(1) .. "|" .. Party(2) .. "|" .. Party(3), "Priest|Mage|Druid", "the party, you as your class")
 Equal(Chat(1), "|cff40ff40[Guild]|r |cffff7d0a[Druid]|r|cff40ff40: anyone up for Deadmines?|r", "names swapped in chat")
 Equal(Chat(2), "|cffffc0c0[1. General]|r |cffffffff[Priest]|r|cffffc0c0: LF tank for Stockades|r", "the zone gone from the channel")
+P:Set("publicChannels", true)
+Equal(Chat(2), "|cffffc0c0[1. General]|r |cffe8e6e1[Merrin Lightfoot]|r|cffffc0c0: LF tank for Stockades|r",
+    "public channels left: General shows who's talking, its zone still gone")
+Equal(Chat(1), "|cff40ff40[Guild]|r |cffff7d0a[Druid]|r|cff40ff40: anyone up for Deadmines?|r", "guild chat still swapped")
+P:Set("channels", false)
+Equal(Chat(2), "|cffffc0c0[1. General - Stormwind]|r |cffe8e6e1[Merrin Lightfoot]|r|cffffc0c0: LF tank for Stockades|r",
+    "the zone follows Channel names alone")
+P:Set("channels", true)
+P:Set("publicChannels", false)
 Equal(Chat(4), "", "a friend coming online: left out of chat, as chat really does")
 P:Set("chatNames", false)
 Equal(Chat(4), "", "still left out with only the pop-ups ticked")
@@ -426,6 +460,144 @@ for _, hover in ipairs({ "group dots on the world map", "the mail icon", "calend
     True(H.Find(hover, true), "a hover to avoid: " .. hover)
 end
 True(H.Find("\"[Party] (hidden)\"", true), "what a locked chat line becomes, and that it doesn't come back")
+
+-- Reset all settings, at the bottom right of the Overview ------------------------------------------------------------------
+
+local reset = w.reset
+w:Select("overview")
+do
+    local page = w.pages.overview
+    True(reset and S[reset].parent == page, "a reset row on the Overview, where it's easy to find")
+    Equal(S[reset].points[1][1] .. " " .. S[reset].points[1][2] .. " " .. S[reset].points[1][3], "BOTTOMRIGHT -24 12",
+        "at its bottom right")
+    local panel = S[w.preview.panel]
+    local panelBottom = -panel.points[1][3] + panel.height
+    local rowTop = S[page].height - 12 - S[reset].height
+    True(rowTop >= panelBottom + 8, "under the preview, clear of it (" .. rowTop .. " vs " .. panelBottom .. ")")
+    Equal(S[reset].width .. "x" .. S[reset].height, panel.width .. "x30", "as wide as the preview, one button high")
+    local content = w.pages.limits.scroll.content
+    local last = w.limits[#w.limits]
+    Equal(S[content].height, -S[last].points[1][3] + S[last].height + 10, "Good to know ends with its last note again")
+    local button = reset.button
+    Equal(H.Text(button.label) .. " " .. S[button].kind, "Reset all settings Button", "Reset all settings")
+    Equal(S[button].points[1][1] .. " " .. S[button].height, "RIGHT 30", "at the right, as tall as the window's rows")
+    local C = P.Theme.C
+    Equal(table.concat(S[button].backdrop, " ") .. " / " .. table.concat(S[button].border, " "),
+        table.concat({ C.button[1], C.button[2], C.button[3], 1 }, " ") .. " / " .. table.concat({ C.buttonEdge[1], C.buttonEdge[2],
+        C.buttonEdge[3], 1 }, " "), "styled like the window's own buttons")
+    Equal(S[w.privateButton].backdrop[1] .. " " .. S[w.privateButton].border[1], C.button[1] .. " " .. C.buttonEdge[1],
+        "the big button's look while off")
+    True(S[button].width <= S[reset].width, "the button fits the row")
+    local asking = reset.ask:GetStringWidth() + 12 + S[reset.yes].width + 6 + S[reset.no].width
+    True(asking <= S[reset].width, "the question and its two buttons fit too (" .. asking .. ")")
+    Equal(S[reset.no].points[1][1] .. " " .. S[reset.yes].points[1][1] .. " " .. tostring(rawequal(S[reset.yes].points[1][2], reset.no))
+        .. " " .. S[reset.ask].points[1][1] .. " " .. tostring(rawequal(S[reset.ask].points[1][2], reset.yes)),
+        "RIGHT RIGHT true RIGHT true", "Cancel at the right, Reset left of it, the question left of that")
+    Equal(tostring(button:IsShown()) .. " " .. tostring(reset.ask:IsShown()) .. " " .. tostring(reset.yes:IsShown()) .. " "
+        .. tostring(reset.no:IsShown()), "true false false false", "at rest: the button alone")
+    Hover(button)
+    Equal(Note(), WHITE .. "Reset all settings|r  Every option goes back to how it started, your name and BattleTag boxes are emptied, "
+        .. "and private mode turns off. Your key binding stays.", "its note says what it does")
+end
+-- It asks first, inside the window.
+local function Asking()
+    return tostring(reset.button:IsShown()) .. " " .. tostring(reset.ask:IsShown()) .. " " .. tostring(reset.yes:IsShown()) .. " "
+        .. tostring(reset.no:IsShown())
+end
+P:Set("gold", true)
+reset.button:Click()
+Equal(Asking(), "false true true true", "a click: the question, Reset and Cancel")
+Equal(H.Text(reset.ask) .. " / " .. H.Text(reset.yes.label) .. " / " .. H.Text(reset.no.label), "Are you sure? / Reset / Cancel",
+    "short and plain")
+Equal(S[reset.yes].backdrop[1] .. " " .. S[reset.no].backdrop[1], P.ACCENT[1] .. " " .. P.Theme.C.button[1],
+    "Reset in the accent, Cancel plain")
+-- A double click on the button: its second click, a moment later, does nothing.
+reset.yes:Click()
+Equal(Asking() .. " " .. tostring(P:Get("gold")), "false true true true true", "Reset straight after the question: ignored")
+H.clock = H.clock + .3
+reset.yes:Click()
+Equal(Asking() .. " " .. tostring(P:Get("gold")), "false true true true true", "still ignored a moment later")
+H.clock = H.clock + 1
+Equal(Note(), CREDIT, "the button's note gone with it")
+Hover(reset.yes)
+True(Note():find(WHITE .. "Reset|r  Every option goes back to how it started", 1, true), "Reset's note says what it does")
+Leave(reset.yes)
+Hover(reset.no)
+Equal(Note(), WHITE .. "Cancel|r  Keeps your settings as they are.", "and Cancel's")
+Leave(reset.no)
+Equal(P:Get("gold"), true, "nothing reset yet")
+P:Set("eye", false)
+Equal(Asking(), "false true true true", "a setting changing meanwhile doesn't take the question away")
+P:Set("eye", true)
+reset.no:Click()
+Equal(Asking(), "true false false false", "Cancel: the button back")
+Equal(P:Get("gold"), true, "and nothing reset")
+reset.button:Click()
+w:Select("overview")
+Equal(Asking(), "false true true true", "choosing the same page again keeps the question")
+w:Select("chat")
+w:Select("overview")
+Equal(Asking(), "true false false false", "leaving the page: the button back")
+reset.button:Click()
+w:Hide()
+P.ShowWindow()
+Equal(tostring(w.selected) .. " " .. Asking(), "overview true false false false", "closing the window: the button back")
+Equal(P:Get("gold"), true, "and still nothing reset")
+Equal(#H.printed, 0, "and nothing said")
+-- Reset: everything back as it started, every control showing it.
+do
+    P:SetPrivate(true)
+    w.modes.buttons.always:Click()
+    w.styles.buttons.hidden:Click()
+    w.colours.buttons.white:Click()
+    P:Set("myName", "Shade")
+    P:Set("myTag", "Fake#9999")
+    P:Set("eye", false)
+    P:Set("chatNames", false)
+    P:Set("publicChannels", true)
+    P:Set("instChat", "chat")
+    P:Set("worldMap", "hide")
+    -- A name half typed on the Overview: saved first, then emptied with the rest.
+    w:Select("overview")
+    box:SetFocus()
+    box:SetText("Half")
+    Equal(H.Text(w.status), "Private mode: |cffb07df0on|r", "private mode on before")
+    reset.button:Click()
+    H.clock = H.clock + 1
+    reset.yes:Click()
+    Equal(P:Private(), false, "Reset: private mode off")
+    Equal(Asking(), "true false false false", "the button back")
+    Equal(box:HasFocus(), false, "the name box let go")
+    local wrong = {}
+    for _, key in ipairs(P.KEYS) do
+        if P:Get(key) ~= P.DEFAULTS[key] then wrong[#wrong + 1] = key end
+        local control = w.controls[key]
+        if P.ROWS[key].options then
+            if not control.options.buttons[P.DEFAULTS[key]].selected then wrong[#wrong + 1] = key .. "'s choice" end
+        elseif control:GetChecked() ~= P.DEFAULTS[key] then
+            wrong[#wrong + 1] = key .. "'s tick"
+        end
+    end
+    Equal(table.concat(wrong, " "), "", "every setting and every row back to how it started")
+    Equal(P:Get("mode") .. " " .. P:Get("nameStyle") .. " " .. P:Get("myColour") .. " [" .. P:Get("myName") .. "][" .. P:Get("myTag")
+        .. "] " .. tostring(P:Get("eye")), "key class game [][] true", "the Overview's settings too")
+    Equal(tostring(w.modes.buttons.key.selected) .. " " .. tostring(w.styles.buttons.class.selected) .. " "
+        .. tostring(w.colours.buttons.game.selected) .. " " .. tostring(w.eyeRow:GetChecked()) .. " " .. tostring(w.modeTag:IsShown()),
+        "true true true true false", "and its controls")
+    Equal(box:GetText() .. "|" .. tagBox:GetText() .. "|" .. tostring(box.placeholder:IsShown()) .. " "
+        .. tostring(tagBox.placeholder:IsShown()), "||true true", "both boxes emptied, their hints back")
+    Equal(H.Text(w.status) .. " / " .. H.Text(w.privateButton.label), "Private mode: off / Turn private mode on", "saying it's off")
+    Equal(H.Text(view.target) .. " / " .. Chat(2), "Brannoc Stonehelm / |cffffc0c0[1. General - Stormwind]|r |cffe8e6e1[Merrin "
+        .. "Lightfoot]|r|cffffc0c0: LF tank for Stockades|r", "the preview with real names again")
+    Equal(tostring(view.eye:IsShown()) .. " " .. tostring(P.Eye:Frame() ~= nil and P.Eye:Frame():IsShown()), "false false",
+        "no eye in the preview or on screen")
+    local left = {}
+    for key in pairs(ForeverEnhancedPrivacyDB) do left[#left + 1] = key end
+    table.sort(left)
+    Equal(table.concat(left, " "), "cvarBackup wasOn", "nothing else left saved")
+    Equal(table.concat(H.printed, " | "), "|cffb07df0Forever Enhanced Privacy|r: Settings reset.", "one line in chat")
+    H.Clear()
+end
 
 -- Closing, Escape and Options > AddOns -------------------------------------------------------------------------------------
 

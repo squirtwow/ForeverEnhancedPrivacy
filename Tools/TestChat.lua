@@ -76,6 +76,9 @@ local function GiveHistory(frame)
 end
 
 local SYSTEM_LIKE = { SYSTEM = true, LOOT = true, TARGETICONS = true, OPENING = true, TRADESKILLS = true, BN_WHISPER_PLAYER_OFFLINE = true }
+-- Lines the game adds with no event or values kept (Forever's MessageEventHandler).
+local BARE_LINES = { CHANNEL_NOTICE = true, CHANNEL_NOTICE_USER = true, CHANNEL_LIST = true, IGNORED = true, FILTERED = true,
+    BN_INLINE_TOAST_ALERT = true, BN_INLINE_TOAST_BROADCAST = true }
 
 -- ChatFrameUtil.ResolvePrefixedChannelName: fails like the game's if the number is gone.
 local function Resolve(channel)
@@ -118,13 +121,17 @@ local function Handler(frame, event, ...)
     local results = pack(H.Chat(event, ...))
     if results[1] then return end
     local a = pack(unpack(results, 2, results.n))
+    -- Only the lines players say keep their event and values (SafePack of the
+    -- event's own values); the game's own lines, joins and /chatlist don't.
+    local kind = event:sub(10)
+    local bare = SYSTEM_LIKE[kind] or BARE_LINES[kind]
     for i = 1, a.n do
         if H.IsSecret(a[i]) then
-            frame:AddMessage(SECRET, 1, 1, 1, 1, 0, 0, event, a)
+            if bare then frame:AddMessage(SECRET, 1, 1, 1, 1) else frame:AddMessage(SECRET, 1, 1, 1, 1, 0, 0, event, pack(...)) end
             return
         end
     end
-    frame:AddMessage(Line(event, a), 1, 1, 1, 1, 0, 0, event, a)
+    if bare then frame:AddMessage(Line(event, a), 1, 1, 1, 1) else frame:AddMessage(Line(event, a), 1, 1, 1, 1, 0, 0, event, pack(...)) end
 end
 
 -- ChatFrameEditBoxMixin:UpdateHeader, cut down: the game measures the header
@@ -225,10 +232,12 @@ local function Game(saved, opts)
     return P
 end
 
--- A chat event's values, as the game sends them.
+-- A chat event's values, as the game sends them (o.zone: the channel's own
+-- id, the 7th value; 0 for a custom channel or none).
 local function Msg(text, sender, o)
     o = o or {}
-    return text, sender or "", "", o.channel or "", o.name2 or "", "", 0, o.number or 0, o.base or "", 0, 1, o.guid or "", o.bn or 0, false
+    return text, sender or "", "", o.channel or "", o.name2 or "", "", o.zone or 0, o.number or 0, o.base or "", 0, 1, o.guid or "",
+        o.bn or 0, false
 end
 
 -- The game hands a chat frame an event: its handler, then any hook.
@@ -650,6 +659,209 @@ Equal(Messages(ChatFrame1), before, "unticked (as it starts): lines already ther
 P:Set("cleanOld", true)
 True(Messages(ChatFrame1):find("[1. General]", 1, true) ~= nil, "ticked while private: cleaned then")
 True(Messages(ChatFrame1):find("psst", 1, true) ~= nil, "whispers kept, with Hide whispers off")
+P:SetPrivate(false)
+Equal(H.Problems(), "", "nothing wrong")
+
+-- Leave public channels as they are ------------------------------------------------------------------------------------------
+
+-- A channel's values for Msg, with a sender's GUID.
+local function From(where, who)
+    local o = {}
+    for key, value in pairs(where) do o[key] = value end
+    for key, value in pairs(who or {}) do o[key] = value end
+    return o
+end
+local ME_GUID = { guid = "Player-1-0001" }
+local TRADE = { channel = "2. Trade - City", base = "Trade", number = 2, zone = 2 }
+local GENERAL_Z = { channel = "1. General - Elwynn Forest", base = "General", number = 1, zone = 1 }
+local LFG = { channel = "4. LookingForGroup", base = "LookingForGroup", number = 4, zone = 26 }
+local SERVICES = { channel = "6. Trade (Services) - City", base = "Trade (Services)", number = 6, zone = 42 }
+local CUSTOM = { channel = "5. mychannel", base = "mychannel", number = 5, zone = 0 }
+local DEFENCE = { channel = "3. LocalDefense - Elwynn Forest", base = "LocalDefense", number = 3, zone = 22 }
+
+Game({ publicChannels = true })
+P:SetPrivate(true)
+ME, WARRIOR, MAGE, PRIEST, PLAYER = Label("DRUID"), Label("WARRIOR"), Label("MAGE"), Label("PRIEST"), Label(nil)
+Event(ChatFrame1, "CHAT_MSG_SAY", Msg("hi", "Merrin Lightfoot", MERRIN)) -- Merrin noted, as anyone talking is
+-- Others in Trade, General and Looking for Group: as the game sends them.
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS [Linen Cloth], ask Brannoc Stonehelm or Merrin", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS [Linen Cloth], ask "
+    .. "Brannoc Stonehelm or Merrin", "Trade: the sender and names in the text left (party and strangers alike); the zone still gone")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("anyone know Kaelis?", "Merrin Lightfoot", From(GENERAL_Z, MERRIN)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:1|h[1. General]|h |Hplayer:Merrin Lightfoot|h[Merrin Lightfoot]|h: anyone know Kaelis?",
+    "General too")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("LFM Deadmines", "Brannoc Stonehelm", From(LFG, BRANNOC)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:4|h[4. LookingForGroup]|h |Hplayer:Brannoc Stonehelm|h[Brannoc Stonehelm]|h: LFM Deadmines",
+    "and Looking for Group")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("crafting bags", "Merrin Lightfoot", From(SERVICES, MERRIN)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:6|h[6. Trade (Services)]|h |Hplayer:Merrin Lightfoot|h[Merrin Lightfoot]|h: crafting bags",
+    "and Trade's services channel")
+Equal(H.SenderName("CHAT_MSG_CHANNEL", "|cff3fc7ebKaelis Dawnbrook|r", Msg("WTS", "Kaelis Dawnbrook", From(TRADE, KAELIS))),
+    "|cff3fc7ebKaelis Dawnbrook|r", "the sender's name as the game coloured it")
+Equal(P:ClassOf("Kaelis Dawnbrook"), "MAGE", "still noted, for their name where chat stays private")
+-- Your own name is still swapped there.
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTB ore, whisper Zriel Gustbellow or |Hplayer:Zriel Gustbellow|h[Zriel Gustbellow]|h",
+    "Merrin Lightfoot", From(TRADE, MERRIN)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Merrin Lightfoot|h[Merrin Lightfoot]|h: WTB ore, whisper " .. ME
+    .. " or |Hplayer:Zriel Gustbellow|h[" .. ME .. "]|h", "your name in someone's line, and a link to you (its data kept)")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS bags", "Zriel Gustbellow", From(TRADE, ME_GUID)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Zriel Gustbellow|h[" .. ME .. "]|h: WTS bags", "you talking")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("hi Zriel", "Brannoc Stonehelm", From(LFG, BRANNOC)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:4|h[4. LookingForGroup]|h |Hplayer:Brannoc Stonehelm|h[Brannoc Stonehelm]|h: hi " .. ME,
+    "your first name alone too")
+-- Someone else with your first name (Forever names have surnames): theirs left whole, never taken for yours.
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS bags", "Zriel Blackmoor", From(TRADE, { guid = "Player-1-0009" })))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Zriel Blackmoor|h[Zriel Blackmoor]|h: WTS bags",
+    "a stranger sharing your first name, talking: left")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("ask Zriel Blackmoor, not Zriel Gustbellow. Zriel Blackmoor! hi Zriel", "Merrin Lightfoot",
+    From(TRADE, MERRIN)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Merrin Lightfoot|h[Merrin Lightfoot]|h: ask Zriel Blackmoor, not "
+    .. ME .. ". Zriel Blackmoor! hi " .. ME, "their full name in a line left whole, yours (full or first) still swapped")
+Event(ChatFrame1, "CHAT_MSG_SAY", Msg("ask Zriel Blackmoor", "Merrin Lightfoot", MERRIN))
+Equal(Last(ChatFrame1), "|Hplayer:Merrin Lightfoot|h[" .. PRIEST .. "]|h: ask " .. PLAYER, "and in say, swapped as theirs, as ever")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("my friend |Kq1|k says hi", "Brannoc Stonehelm", From(GENERAL_Z, BRANNOC)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:1|h[1. General]|h |Hplayer:Brannoc Stonehelm|h[Brannoc Stonehelm]|h: my friend " .. PLAYER
+    .. " says hi", "a Battle.net name (your friend's) still hidden")
+-- Joins and /chatlist: only yours.
+Event(ChatFrame1, "CHAT_MSG_CHANNEL_NOTICE_USER", Msg("PLAYER_LEFT", "Brannoc Stonehelm", LFG))
+Equal(Last(ChatFrame1), "[4. LookingForGroup] Brannoc Stonehelm left the channel.", "someone leaving: left")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL_NOTICE_USER", Msg("PLAYER_LEFT", "Zriel Gustbellow", LFG))
+Equal(Last(ChatFrame1), "[4. LookingForGroup] Druid left the channel.", "you leaving: swapped")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL_LIST", Msg("Brannoc Stonehelm, *Zriel Gustbellow, Merrin Lightfoot", "", LFG))
+Equal(Last(ChatFrame1), "[4. LookingForGroup] Brannoc Stonehelm, *" .. ME .. ", Merrin Lightfoot", "/chatlist: only you")
+-- Told apart by the base name (never the name shown), as Forever sends it: with the zone on the end, and a
+-- channel id that isn't the game's list (seen in game 2026-10-11).
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("expecting 2nd child", "Kaelis Dawnbrook", From({ channel = "1. General - Darkshore",
+    base = "General - Darkshore", number = 1, zone = 77 }, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:1|h[1. General]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: expecting 2nd child",
+    "Forever's General: base name with the zone, an unknown id: left, zone still gone")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS bags", "Zriel Gustbellow", From({ channel = "1. General - Darkshore",
+    base = "General - Darkshore", number = 1, zone = 0 }, ME_GUID)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:1|h[1. General]|h |Hplayer:Zriel Gustbellow|h[" .. ME .. "]|h: WTS bags",
+    "and you talking there still swapped")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From({ channel = "2. Trade - City", base = "Trade - City",
+    number = 2, zone = 77 }, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS", "Forever's Trade too")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From({ channel = "2. Trade - City", base = "Trade", number = 2 },
+    KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS",
+    "by its base name when the game gives no id")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From({ channel = "2. Handel - Stadt", base = "", number = 2,
+    zone = 2 }, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Handel]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS",
+    "by the game's id only when it gives no base name")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("hi Merrin", "Kaelis Dawnbrook", From({ channel = "7. Newcomer Chat - Elwynn Forest",
+    base = "Newcomer Chat - Elwynn Forest", number = 7, zone = 1 }, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:7|h[7. Newcomer Chat]|h |Hplayer:Kaelis Dawnbrook|h[" .. MAGE .. "]|h: hi " .. PRIEST,
+    "another of the game's channels, whatever its id: still swapped")
+do
+    local before = Count(ChatFrame1)
+    Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("Auberdine is under attack!", "Kaelis Dawnbrook", From({
+        channel = "3. LocalDefense - Darkshore", base = "LocalDefense - Darkshore", number = 3, zone = 2 }, KAELIS)))
+    Equal(Count(ChatFrame1), before, "Forever's LocalDefense (zone on its base name, a public id): still kept out with channel names")
+end
+-- Everything else stays private.
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("yo Merrin", "Kaelis Dawnbrook", From(CUSTOM, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:5|h[5. mychannel]|h |Hplayer:Kaelis Dawnbrook|h[" .. MAGE .. "]|h: yo " .. PRIEST,
+    "a custom channel: swapped")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL_LIST", Msg("Brannoc Stonehelm, *Zriel Gustbellow", "", CUSTOM))
+Equal(Last(ChatFrame1), "[5. mychannel] " .. WARRIOR .. ", *" .. ME, "and its /chatlist")
+do
+    local before = Count(ChatFrame1)
+    Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("Goldshire is under attack!", "Kaelis Dawnbrook", From(DEFENCE, KAELIS)))
+    Equal(Count(ChatFrame1), before, "LocalDefense still stays out with channel names ticked")
+end
+P:Set("channels", false)
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("help Merrin", "Kaelis Dawnbrook", From(DEFENCE, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:3|h[3. LocalDefense - Elwynn Forest]|h |Hplayer:Kaelis Dawnbrook|h[" .. MAGE .. "]|h: help "
+    .. PRIEST, "and with channel names unticked, its names swapped")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade - City]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS",
+    "Trade's own name follows Channel names alone")
+P:Set("channels", true)
+Event(ChatFrame1, "CHAT_MSG_SAY", Msg("hi Zriel", "Brannoc Stonehelm", BRANNOC))
+Equal(Last(ChatFrame1), "|Hplayer:Brannoc Stonehelm|h[" .. WARRIOR .. "]|h: hi " .. ME, "say still swapped")
+for _, event in ipairs({ "CHAT_MSG_YELL", "CHAT_MSG_PARTY", "CHAT_MSG_GUILD", "CHAT_MSG_WHISPER" }) do
+    Event(ChatFrame1, event, Msg("ask Merrin", "Brannoc Stonehelm", BRANNOC))
+    Equal(Last(ChatFrame1), "|Hplayer:Brannoc Stonehelm|h[" .. WARRIOR .. "]|h: ask " .. PRIEST, event:sub(10):lower() .. " still swapped")
+end
+Event(ChatFrame1, "CHAT_MSG_SYSTEM", Msg("Merrin Lightfoot has gone offline."))
+Equal(Last(ChatFrame1), PRIEST .. " has gone offline.", "and the game's own lines")
+-- Names unticked: nothing swapped, yours neither.
+P:Set("chatNames", false)
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("hi Zriel", "Brannoc Stonehelm", From(TRADE, BRANNOC)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Brannoc Stonehelm|h[Brannoc Stonehelm]|h: hi Zriel",
+    "Swap names in chat unticked: nothing changes there")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("hi", "Zriel Gustbellow", From(TRADE, ME_GUID)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Zriel Gustbellow|h[Zriel Gustbellow]|h: hi", "not even you")
+P:Set("chatNames", true)
+-- Unticked while private: new lines swapped again, lines already there left as they were.
+do
+    Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+    local before = Messages(ChatFrame1)
+    P:Set("publicChannels", false)
+    Equal(Messages(ChatFrame1), before, "unticked: lines already in chat stay as they were")
+    Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+    Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[" .. MAGE .. "]|h: WTS", "new ones swapped")
+    Equal(H.SenderName("CHAT_MSG_CHANNEL", "Kaelis Dawnbrook", Msg("WTS", "Kaelis Dawnbrook", From(TRADE, KAELIS))), MAGE,
+        "the sender too")
+    before = Messages(ChatFrame1)
+    P:Set("publicChannels", true)
+    Equal(Messages(ChatFrame1), before, "ticked again: nothing already there changes")
+    Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+    Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS", "new ones left")
+end
+-- A channel line the game locks (an encounter in the open world): as before.
+Locked(ChatFrame1, "CHAT_MSG_CHANNEL")
+Equal(Last(ChatFrame1), "[Channel] (hidden)", "a locked channel line: hidden as before (In dungeons and raids)")
+P:SetPrivate(false)
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("hi Zriel", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade - City]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: hi Zriel",
+    "off: as the game says it")
+Equal(H.Problems(), "", "nothing wrong in public channels")
+
+-- Unticked (as it starts): Trade and General swapped as ever.
+Game(nil)
+P:SetPrivate(true)
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS, ask Brannoc", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[" .. Label("MAGE") .. "]|h: WTS, ask "
+    .. Label("WARRIOR"), "unticked: Trade swapped, as before")
+Event(ChatFrame1, "CHAT_MSG_CHANNEL_LIST", Msg("Brannoc Stonehelm", "", LFG))
+Equal(Last(ChatFrame1), "[4. LookingForGroup] " .. Label("WARRIOR"), "and Looking for Group's list")
+P:SetPrivate(false)
+Equal(H.Problems(), "", "nothing wrong")
+
+-- Lines already in chat: Clean lines leaves the public channels' others too.
+Game({ cleanOld = true, publicChannels = true })
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS, ask Zriel or Brannoc", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("LF tank", "Zriel Gustbellow", From(GENERAL_Z, ME_GUID)))
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("yo Brannoc", "Kaelis Dawnbrook", From(CUSTOM, KAELIS)))
+Event(ChatFrame1, "CHAT_MSG_SAY", Msg("hi Kaelis", "Brannoc Stonehelm", BRANNOC))
+P:SetPrivate(true)
+ME, WARRIOR, MAGE = Label("DRUID"), Label("WARRIOR"), Label("MAGE")
+Equal(Messages(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[Kaelis Dawnbrook]|h: WTS, ask " .. ME
+    .. " or Brannoc\n"
+    .. "|Hchannel:channel:1|h[1. General]|h |Hplayer:Zriel Gustbellow|h[" .. ME .. "]|h: LF tank\n"
+    .. "|Hchannel:channel:5|h[5. mychannel]|h |Hplayer:Kaelis Dawnbrook|h[" .. MAGE .. "]|h: yo " .. WARRIOR .. "\n"
+    .. "|Hplayer:Brannoc Stonehelm|h[" .. WARRIOR .. "]|h: hi " .. MAGE,
+    "cleaned when it turns on: in Trade and General only your name (zones still gone), the rest as ever")
+P:SetPrivate(false)
+Equal(H.Problems(), "", "nothing wrong cleaning")
+-- A join or /chatlist line keeps no event or values in chat (the game adds it bare), and its channel is only known by
+-- the name shown, so an old one is cleaned in full, as before.
+Game({ cleanOld = true, publicChannels = true })
+Event(ChatFrame1, "CHAT_MSG_CHANNEL_NOTICE_USER", Msg("PLAYER_LEFT", "Brannoc Stonehelm", LFG))
+Equal(select(8, ChatFrame1:GetMessageInfo(1)), nil, "(kept with no event, as the game keeps it)")
+P:SetPrivate(true)
+Equal(Last(ChatFrame1), "[4. LookingForGroup] " .. Label("WARRIOR") .. " left the channel.",
+    "an old join line in a public channel: cleaned in full")
+P:SetPrivate(false)
+Equal(H.Problems(), "", "nothing wrong")
+Game({ cleanOld = true })
+Event(ChatFrame1, "CHAT_MSG_CHANNEL", Msg("WTS, ask Brannoc", "Kaelis Dawnbrook", From(TRADE, KAELIS)))
+P:SetPrivate(true)
+Equal(Last(ChatFrame1), "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Kaelis Dawnbrook|h[" .. Label("MAGE") .. "]|h: WTS, ask "
+    .. Label("WARRIOR"), "unticked: Trade lines already there cleaned, as before")
 P:SetPrivate(false)
 Equal(H.Problems(), "", "nothing wrong")
 

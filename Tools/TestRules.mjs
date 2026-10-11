@@ -5,7 +5,8 @@
 // named; no text run as code; no Blizzard window opened or closed and no
 // Blizzard function of the "Name_Update" kind called by the addon; Blizzard's
 // frames named in the code never shown, hidden, moved, scripted or written
-// on; chat output only through the core; every module file registers itself
+// on; chat output only through the core; settings and the reset changed only
+// from the window, never through the game's pop-ups; every module file registers itself
 // and its header names every setting it owns; British spelling in player
 // text; and no other addon named.
 // Run with: node --test Tools/TestRules.mjs
@@ -312,6 +313,23 @@ test('chat output only through the core (P:Print, P:Say)', async () => {
   assert.deepEqual(found, []);
 });
 
+// Settings change only from the window (P:Set, and Reset all settings after it
+// asks, inside the window); no Blizzard dialog is used or written for that.
+test('settings and the reset only from the window, never through the game\'s pop-ups', async () => {
+  const found = [];
+  for (const { name, code } of await addonCode()) {
+    for (const match of code.matchAll(/\bStaticPopupDialogs\b|\bStaticPopup_\w+/g)) found.push(`${name}:${lineOf(code, match.index)} ${match[0]}`);
+    if (name === 'Window.lua') continue;
+    for (const match of code.matchAll(/\bP\s*:\s*(Set|Reset)\s*\(/g)) {
+      if (name === 'Core.lua' && /function\s+$/.test(code.slice(Math.max(0, match.index - 12), match.index))) continue;
+      found.push(`${name}:${lineOf(code, match.index)} P:${match[1]}`);
+    }
+  }
+  assert.deepEqual(found, []);
+  const window = codeOnly(await read('Window.lua'));
+  assert.equal([...window.matchAll(/\bP\s*:\s*Reset\s*\(/g)].length, 1, 'one reset, from the window\'s own Reset button');
+});
+
 test('every module registers itself, and its header names every setting it owns', async () => {
   const core = await read('Core.lua');
   const owned = {};
@@ -319,7 +337,7 @@ test('every module registers itself, and its header names every setting it owns'
     (owned[match[2]] = owned[match[2]] || []).push(match[1]);
   }
   assert.deepEqual(Object.keys(owned).sort(), [...MODULES].sort(), 'the rows belong to the five modules');
-  assert.equal(Object.values(owned).flat().length, 41, 'all 41 rows');
+  assert.equal(Object.values(owned).flat().length, 42, 'all 42 rows');
   for (const module of MODULES) {
     const source = await read(module + '.lua');
     const header = source.match(/^(?:--[^\n]*\n)+/);

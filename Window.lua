@@ -3,7 +3,8 @@
 -- big private mode button, how it turns on, how names look, your own name,
 -- a made-up BattleTag, their colour, the eye, and a live preview of sample
 -- names. Every other page is drawn from Core.lua's rows, so the modules
--- never touch the window.
+-- never touch the window. The Overview's bottom right has Reset all
+-- settings, which asks first, inside the window.
 local _, P = ...
 
 local T = P.Theme
@@ -274,7 +275,8 @@ local TARGET = { name = "Brannoc Stonehelm", class = "WARRIOR" }
 local PARTY = { { name = "Merrin Lightfoot", class = "PRIEST" }, { name = "Kaelis Dawnbrook", class = "MAGE" } }
 local CHAT = {
     { channel = "[Guild]", colour = "40ff40", me = true, text = "anyone up for Deadmines?" },
-    { channel = "[1. General - Stormwind]", short = "[1. General]", colour = "ffc0c0", sample = PARTY[1], text = "LF tank for Stockades" },
+    { channel = "[1. General - Stormwind]", short = "[1. General]", public = true, colour = "ffc0c0", sample = PARTY[1],
+        text = "LF tank for Stockades" },
     { channel = "[Party]", colour = "aaaaff", sample = PARTY[2], text = "water up, 2 min" },
 }
 -- A friend coming online, as chat shows it. Chat can't rename them (the game
@@ -398,6 +400,8 @@ local function ChatLine(line, myName, myClass)
     local real, classFile = myName, myClass
     if line.sample then real, classFile = line.sample.name, line.sample.class end
     local name, colour = Shown(real, classFile, "chatNames", line.me)
+    -- Someone else in a public channel, left as they are with its tick on.
+    if line.public and not line.me and P:IsOn("publicChannels") then name, colour = real, C.text end
     local chColour = { tonumber(line.colour:sub(1, 2), 16) / 255, tonumber(line.colour:sub(3, 4), 16) / 255,
         tonumber(line.colour:sub(5, 6), 16) / 255 }
     local who = name ~= "" and (" " .. T:Paint("[" .. name .. "]", colour)) or ""
@@ -486,6 +490,61 @@ local function BuildList(window, page, sections)
     content:SetHeight(y)
 end
 
+-- Reset all settings, at the bottom right of the Overview under the preview,
+-- where it's easy to find (the user: "i kinda want it in a spot they can see,
+-- not have to dig for it"). It asks first, here in the window (never one of
+-- the game's pop-ups, whose tables an addon must not write in): the button
+-- gives way to "Are you sure?" with Reset and Cancel, Cancel where the
+-- button's right end was. Reset ignores clicks for a moment after it shows,
+-- so a double click on the button can't reset. Cancel, another page or
+-- closing the window puts the button back.
+local RESET_HELP = "Every option goes back to how it started, your name and BattleTag boxes are emptied, and private mode "
+    .. "turns off. Your key binding stays."
+local RESET_WAIT = .5 -- seconds Reset ignores clicks after the question shows
+
+local function BuildReset(window, page)
+    local row = CreateFrame("Frame", nil, page)
+    row:SetPoint("BOTTOMRIGHT", -PAD, 12)
+    row:SetSize(PREVIEW_W, 30)
+    local button = T:Button(row, "Reset all settings")
+    button:SetPoint("RIGHT")
+    local no = T:Button(row, "Cancel")
+    no:SetPoint("RIGHT")
+    local yes = T:Button(row, "Reset", true)
+    yes:SetPoint("RIGHT", no, "LEFT", -6, 0)
+    local ask = T:Text(row, "GameFontHighlight")
+    ask:SetPoint("RIGHT", yes, "LEFT", -12, 0)
+    ask:SetText("Are you sure?")
+    row.button, row.ask, row.yes, row.no = button, ask, yes, no
+    -- asking: show the question and its two buttons instead.
+    function row:Ask(asking)
+        asking = asking and true or false
+        self.asking = asking
+        if asking then self.askedAt = GetTime() end
+        button:SetShown(not asking)
+        ask:SetShown(asking)
+        yes:SetShown(asking)
+        no:SetShown(asking)
+        window:ShowNote()
+    end
+    button:SetScript("OnClick", function() row:Ask(true) end)
+    no:SetScript("OnClick", function() row:Ask(false) end)
+    yes:SetScript("OnClick", function()
+        if GetTime() - (row.askedAt or 0) < RESET_WAIT then return end
+        row:Ask(false)
+        -- A name being typed is saved first, so the reset empties it too.
+        for _, box in ipairs(window.textBoxes) do
+            if box:HasFocus() then box:ClearFocus() end
+        end
+        P:Reset()
+    end)
+    window:Hint(button, "Reset all settings", RESET_HELP)
+    window:Hint(yes, "Reset", RESET_HELP)
+    window:Hint(no, "Cancel", "Keeps your settings as they are.")
+    window.reset = row
+    row:Ask(false)
+end
+
 local function BuildLimits(window, page)
     local scroll = T:Scroll(page, { PAD, BODY_TOP, PAD, 8 }, INNER)
     page.scroll = scroll
@@ -529,6 +588,7 @@ local function BuildPage(window, page)
     frame.title, frame.about = title, about
     if page.key == "overview" then
         BuildOverview(window, frame)
+        BuildReset(window, frame)
     elseif page.key == "limits" then
         BuildLimits(window, frame)
     else
@@ -586,6 +646,8 @@ local function Build()
     window.selected = "overview"
     function window:Select(key)
         if not self.pages[key] then return end
+        -- Leaving the Overview while it asks: the reset button back.
+        if key ~= self.selected and self.reset then self.reset:Ask(false) end
         self.selected = key
         self.hovered = nil
         self:Refresh()
@@ -610,6 +672,7 @@ local function Build()
     window:SetScript("OnShow", function(self) self:Refresh() end)
     window:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
+        if self.reset then self.reset:Ask(false) end
         self.hovered, self.message = nil, nil
         for _, box in ipairs(self.textBoxes) do
             if box:HasFocus() then box:ClearFocus() end
