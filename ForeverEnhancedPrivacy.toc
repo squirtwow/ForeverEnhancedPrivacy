@@ -2,7 +2,7 @@
 ## Title: Forever Enhanced Privacy
 ## Notes: A private mode for streams and screenshots: hides or swaps names, chat giveaways and where you are.
 ## Author: Squirt
-## Version: 0.1.0
+## Version: 1.0.0
 ## SavedVariables: ForeverEnhancedPrivacyDB
 ## IconTexture: Interface\AddOns\ForeverEnhancedPrivacy\Media\Icon.tga
 ## Category: UI

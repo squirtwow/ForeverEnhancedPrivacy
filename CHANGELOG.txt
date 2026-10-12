@@ -1,0 +1,12 @@
+# Changelog
+
+## 1.0.0
+
+### Added
+- First release: a private mode for streams and screenshots.
+- Names swapped or hidden on frames, nameplates, tooltips, chat, both friends windows, guild, mail, the group finder and pop-ups.
+- Your own name and a made-up BattleTag, in a colour you pick.
+- An option to keep Trade, General and Looking for Group readable.
+- Gold, zone, coordinates, clock and the world map hidden.
+- Turn it on with a key, for screenshots only, or always; a minimap button and an optional small eye show when it's on.
+- Reset all settings, on the Overview.

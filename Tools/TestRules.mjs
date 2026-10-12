@@ -87,7 +87,10 @@ test('the TOC: the right fields, and every Lua file once, in the harness\'s orde
   assert.match(toc, /^## Interface: 16001\r?$/m);
   assert.match(toc, /^## Title: Forever Enhanced Privacy\r?$/m);
   assert.match(toc, /^## Author: Squirt\r?$/m);
-  assert.match(toc, /^## Version: 0\.1\.0\r?$/m);
+  assert.match(toc, /^## Version: \d+\.\d+\.\d+\r?$/m);
+  const version = toc.match(/^## Version: (\S+)\r?$/m)[1];
+  assert.match(await read('CHANGELOG.txt'), new RegExp('^## ' + version.replace(/\./g, '\\.') + '\\r?$', 'm'),
+    'the changelog has an entry for the TOC version');
   assert.match(toc, /^## SavedVariables: ForeverEnhancedPrivacyDB\r?$/m);
   const icon = toc.match(/^## IconTexture: Interface\\AddOns\\ForeverEnhancedPrivacy\\(.+?)\r?$/m);
   assert.ok(icon, 'an icon');
