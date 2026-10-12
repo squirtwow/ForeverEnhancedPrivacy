@@ -14,6 +14,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 const root = new URL('../', import.meta.url);
 const read = name => readFile(new URL(name, root), 'utf8');
@@ -378,16 +379,31 @@ test('player text in British spelling', async () => {
   assert.deepEqual(found, []);
 });
 
+// Other addons' names are kept here as hashes only (sha1 of the lower-case
+// name, first 16 hex digits), so this file names none either.
+const OTHERS = new Set([
+  '6fc79fada620a1c9', 'e52a90bc5daa975e', '02aca0a6f01611ce', 'af6d017462ed41ba', '5cab34c79b0b9875',
+  'c5e50d412e7141ae', '88ed36849a168ebc', '8b416b70399abb68', '9dc7c8b069f26776', '85101e8dbaeeae36',
+  '7f466e6770936442', 'fdd508e96907f59b', 'd8242d1e1459c6f5', '9f7ffe1ac0b90e2d', 'f6642857381c08dc',
+  '16614b5df8db4ed3', '8e1fd1320c1ec0c9', '7b841cc1685b8265', 'c92ae2f85364c65b', '70298b52a39e477e',
+  '7f0b6579f039a557',
+]);
+const hash = text => createHash('sha1').update(text).digest('hex').slice(0, 16);
+
 test('no other addon named', async () => {
   const found = [];
-  const others = /\b(ElvUI|Tukui|Questie|WeakAuras|Plater|Bartender|Dominos|Prat|Chatter|Chattynator|VuhDo|Grid2|Details!|Skada|Recount|BigWigs|DBM|Deadly Boss Mods|Leatrix|Bagnon|AdiBags)\b/;
-  for (const name of await rootFiles(/\.(lua|xml|toc)$/i)) {
+  for (const name of await rootFiles(/\.(lua|xml|toc|md)$/i)) {
     (await read(name)).split('\n').forEach((line, i) => {
-      const match = line.match(others);
-      if (match) found.push(`${name}:${i + 1} ${match[1]}`);
+      const words = line.toLowerCase().split(/[^a-z0-9!]+/).filter(Boolean);
+      for (let n = 1; n <= 3; n++) {
+        for (let w = 0; w + n <= words.length; w++) {
+          if (OTHERS.has(hash(words.slice(w, w + n).join(' ')))) found.push(`${name}:${i + 1} word ${w + 1}`);
+        }
+      }
     });
   }
   assert.deepEqual(found, []);
+  assert.ok(OTHERS.has(hash('deadly boss mods')) && OTHERS.has(hash('details!')), 'the list holds multi-word and marked names');
 });
 
 test('the licence, and the art the code names', async () => {

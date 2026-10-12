@@ -6,7 +6,7 @@
 ## SavedVariables: ForeverEnhancedPrivacyDB
 ## IconTexture: Interface\AddOns\ForeverEnhancedPrivacy\Media\Icon.tga
 ## Category: UI
-# Personal and unpublished. Bindings.xml loads on its own.
+# Bindings.xml loads on its own.
 
 Core.lua
 Theme.lua
