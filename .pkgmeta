@@ -1,0 +1,7 @@
+package-as: ForeverEnhancedPrivacy
+
+manual-changelog: CHANGELOG.txt
+
+ignore:
+  - .github
+  - Tools
