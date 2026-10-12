@@ -5,3 +5,4 @@ manual-changelog: CHANGELOG.txt
 ignore:
   - .github
   - Tools
+  - Screenshots
