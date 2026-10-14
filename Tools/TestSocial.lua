@@ -3,7 +3,8 @@
 -- the ignore list, Battle.net pop-ups, /who rows (covered, never rewritten),
 -- recent players, the guild roster, details panel, notes, event log, news,
 -- message of the day and info, the guild and community list, charters, the
--- inspect window's guild tab, mail (inbox, letter, invoice, To box and its
+-- inspect window's guild tab, a made-up guild (your guild's row and your own
+-- /who row's guild), mail (inbox, letter, invoice, To box and its
 -- suggestions), the group finder and the calendar. Off does nothing, on
 -- swaps, each tick puts back only its own, name settings re-label, off puts
 -- it all back, and secrets are never read.
@@ -204,8 +205,12 @@ local function Guild()
             self.Note:SetText(info.memberNote or "")
         end,
     }
+    -- As the game's list: your own clubs come marked isClub, another guild's
+    -- invitation isInvitation, and a ticket holds its club one layer down.
     CommunitiesListEntryMixin = { Init = function(self, data)
-        self.Name:SetText(data.clubInfo and data.clubInfo.name or "Join a community")
+        local club = data.clubInfo
+        if club and club.isTicket then club = club.clubInfo end
+        self.Name:SetText(club and club.name or "Join a community")
     end }
     local frame = Frame("CommunitiesFrame", UIParent)
     G.memberRows = List(Child(frame, "MemberList"), "ScrollBox")
@@ -538,6 +543,19 @@ local function CoverOf(row)
     end
 end
 
+-- Our own frame laid over one region of a row (your /who row's guild): its
+-- text, whether it shows and its colour; nil when none was made.
+local function CoverOver(row, region)
+    for _, child in ipairs(S[row].children) do
+        local at = S[child].points and S[child].points[1]
+        if not S[child].sealed and at and rawequal(at[2], region) then
+            local text = S[child].children[1]
+            local c = S[text].colour
+            return S[text].text, S[child].shown, c and ("%.2f %.2f %.2f"):format(c[1], c[2], c[3]) or "none"
+        end
+    end
+end
+
 local function Class(file)
     local c = H.CLASS_COLOURS[file]
     return P:Colourise(H.CLASS_NAMES[file], c.r, c.g, c.b)
@@ -583,9 +601,11 @@ Run(function()
     brannocRow:SetMember(brannoc)
     secretRow:SetMember(hiddenMember)
 end)
-local guildRow = ClubRow({ clubInfo = { name = "Knights of Zriel", clubType = Enum.ClubType.Guild } })
-local communityRow = ClubRow({ clubInfo = { name = "Zriel's Pals", clubType = Enum.ClubType.Character } })
+local guildRow = ClubRow({ clubInfo = { name = "Knights of Zriel", clubType = Enum.ClubType.Guild, isClub = true } })
+local communityRow = ClubRow({ clubInfo = { name = "Zriel's Pals", clubType = Enum.ClubType.Character, isClub = true } })
 local joinRow = ClubRow({})
+local invitedRow = ClubRow({ clubInfo = { name = "Iron Wolves", clubType = Enum.ClubType.Guild, isInvitation = true } })
+local ticketRow = ClubRow({ clubInfo = { isTicket = true, clubInfo = { name = "Iron Wolves", clubType = Enum.ClubType.Guild } } })
 local lootRow, myLootRow, achievementRow, motdRow = NewsRow(), NewsRow(), NewsRow(), NewsRow()
 Run(function()
     GuildNewsButton_SetNews(lootRow, 1)
@@ -679,6 +699,7 @@ Equal(H.Alpha(detail.ZoneText), 1, "their zone isn't yours")
 
 Equal(T(guildRow.Name) .. "|" .. T(communityRow.Name) .. "|" .. T(joinRow.Name), "Guild|Community|Join a community",
     "the guild and community list")
+Equal(T(invitedRow.Name) .. "|" .. T(ticketRow.Name), "Guild|Guild", "another guild's invitation and a ticket too")
 Equal(H.Alpha(G.motd) .. H.Alpha(G.infoText) .. H.Alpha(G.log), "000", "message of the day, guild info and the event log hidden")
 Equal(T(lootRow.text), Class("WARRIOR") .. " obtained [Thunderfury].", "news: a guildmate's loot")
 Equal(T(myLootRow.text), Class("DRUID") .. " obtained [Copper Ore].", "your own")
@@ -969,6 +990,85 @@ do
     P:Set("myName", "Mr Shadow")
     Equal(H.Problems(), "", "no secret read")
 end
+-- A made-up guild ("Your guild becomes"): your own guild's row in the guild
+-- list, and your own /who row's guild (laid over it, never rewritten).
+-- Another guild's invitation or ticket, communities, the inspect tab (always
+-- someone else's guild) and other players' /who rows never show it.
+do
+    local GUILD_GREY = "0.50 0.50 0.50"
+    S[whoMe.GuildName].colour = { .5, .5, .5, 1 }
+    S[whoBrannoc.GuildName].colour = { .5, .5, .5, 1 }
+    local function Who(row)
+        local text, shown = CoverOver(row, row.GuildName)
+        return T(row.GuildName) .. " " .. H.Alpha(row.GuildName) .. " " .. tostring(text) .. " " .. tostring(shown)
+    end
+    Equal(CoverOver(whoMe, whoMe.GuildName), nil, "no made-up guild yet: nothing laid over your /who row's guild")
+    P:Set("myGuild", "Lancers of Elwynn")
+    Equal(T(guildRow.Name), "Lancers of Elwynn", "your guild's row: the made-up guild, at once")
+    Equal(T(invitedRow.Name) .. "|" .. T(ticketRow.Name) .. "|" .. T(communityRow.Name), "Guild|Guild|Community",
+        "another guild's invitation and ticket still Guild, a community still Community")
+    Run(function() guildRow:Init(elementData[guildRow]) end)
+    Equal(T(guildRow.Name), "Lancers of Elwynn", "and after the game draws the row again")
+    Run(InspectGuildFrame_Update)
+    Equal(T(InspectGuildFrame.guildName), "Guild", "the inspect tab is someone else's guild: still Guild")
+    Equal(Who(whoMe), "Knights of Zriel 0 Lancers of Elwynn true", "your /who row: the game's text kept and hidden, the made-up guild over it")
+    Equal(select(3, CoverOver(whoMe, whoMe.GuildName)), GUILD_GREY, "in the column's own colour")
+    Equal(Who(whoBrannoc), "Knights of Zriel 1 nil nil", "someone else's /who row: their guild as it is, nothing over it")
+    Equal(CoverOf(whoMe), "Mr Shadow", "your name's label on /who left as it was")
+    do
+        local writes = H.Writes()
+        P:Module("Social"):Apply(true)
+        Equal(H.Writes(), writes, "applying again writes nothing")
+    end
+    P:Set("myColour", "accent")
+    Equal(T(guildRow.Name) .. " / " .. select(3, CoverOver(whoMe, whoMe.GuildName)), "Lancers of Elwynn / " .. GUILD_GREY,
+        "the Name colour plays no part")
+    P:Set("myColour", "game")
+    P:Set("nameStyle", "hidden")
+    Equal(T(guildRow.Name) .. " / " .. Who(whoMe), "Lancers of Elwynn / Knights of Zriel 0 Lancers of Elwynn true",
+        "the Hidden style leaves a typed guild")
+    P:Set("nameStyle", "player")
+    P:Set("myGuild", "Iron Wolves Kin")
+    Equal(T(guildRow.Name) .. " / " .. Who(whoMe), "Iron Wolves Kin / Knights of Zriel 0 Iron Wolves Kin true", "a new one at once, everywhere")
+    -- Your /who row reused for someone else, then you again.
+    local myData = elementData[whoMe]
+    local theirs = { index = 2, info = { fullName = "Tamsin Reed", filename = "MAGE", area = "Darnassus", fullGuildName = "Iron Vanguard" } }
+    elementData[whoMe] = theirs
+    Run(function() whoMe:InitButton(theirs, false) end)
+    Equal(Who(whoMe), "Iron Vanguard 1 Iron Wolves Kin false", "the row reused for someone else: their guild shows, ours gone")
+    elementData[whoMe] = myData
+    Run(function() whoMe:InitButton(myData, false) end)
+    Equal(Who(whoMe), "Knights of Zriel 0 Iron Wolves Kin true", "back to you: the made-up guild again")
+    -- Your guild's name unticked: the real name back in the list; on /who
+    -- your guild hidden again (whoList is still ticked), the made-up one gone.
+    P:Set("guildName", false)
+    Equal(T(guildRow.Name) .. "|" .. T(invitedRow.Name) .. "|" .. T(ticketRow.Name), "Knights of Zriel|Iron Wolves|Iron Wolves",
+        "guildName unticked: the list's real names back")
+    Equal(Who(whoMe), "Knights of Zriel 0 Iron Wolves Kin false", "your /who guild hidden as before, the made-up one gone")
+    Run(function() whoMe:InitButton(myData, false) end)
+    Equal(Who(whoMe), "Knights of Zriel 0 Iron Wolves Kin false", "and when the game draws the row again")
+    P:Set("guildName", true)
+    Equal(T(guildRow.Name) .. " / " .. Who(whoMe), "Iron Wolves Kin / Knights of Zriel 0 Iron Wolves Kin true", "ticked again: back at once")
+    P:Set("whoList", false)
+    Equal(Who(whoMe), "Knights of Zriel 1 Iron Wolves Kin false", "/who unticked: your real guild shows, ours gone")
+    Equal(T(guildRow.Name), "Iron Wolves Kin", "the guild list keeps its own tick")
+    P:Set("whoList", true)
+    Equal(Who(whoMe), "Knights of Zriel 0 Iron Wolves Kin true", "/who ticked again: the made-up guild over it")
+    -- Not in a guild: nothing to stand in for, as in your tooltip.
+    do
+        local guild = H.guild
+        H.guild = nil
+        Run(function() whoMe:InitButton(myData, false) end)
+        Equal(Who(whoMe), "Knights of Zriel 0 Iron Wolves Kin false", "not in a guild: no made-up guild on your /who row")
+        H.guild = guild
+        Run(function() whoMe:InitButton(myData, false) end)
+        Equal(Who(whoMe), "Knights of Zriel 0 Iron Wolves Kin true", "in one again: back")
+    end
+    P:Set("myGuild", "")
+    Equal(T(guildRow.Name) .. " / " .. Who(whoMe), "Guild / Knights of Zriel 0 Iron Wolves Kin false", "emptied: Guild, and hidden on /who, as before")
+    P:Set("myGuild", "Lancers of Elwynn")
+    Equal(H.Problems(), "", "nothing wrong with a made-up guild")
+end
 P:Set("nameStyle", "hidden")
 P:Set("myName", "")
 Equal(T(wowRow.name), "Level 60 Warrior", "Hidden style: just the level")
@@ -1009,9 +1109,11 @@ Equal(H.Alpha(myRow.Zone) .. H.Alpha(G.motd) .. H.Alpha(G.infoText) .. H.Alpha(G
 Equal(T(lootRow.text) .. "|" .. T(motdRow.text), "Brannoc Stonehelm obtained [Thunderfury].|Message of the Day: Welcome Zriel!",
     "the news back")
 Equal(T(guildRow.Name) .. "|" .. T(InspectGuildFrame.guildName), "Knights of Zriel|Knights of Zriel", "the guild's name back")
+Equal(T(invitedRow.Name) .. "|" .. T(ticketRow.Name), "Iron Wolves|Iron Wolves", "and the invitation's and ticket's")
 Equal(T(whoBrannoc.Name) .. " " .. H.Alpha(whoBrannoc.Name), "Brannoc Stonehelm 1", "/who back")
 Equal(select(2, CoverOf(whoBrannoc)), false, "its label gone")
 Equal(H.Alpha(whoMe.GuildName), 1, "your guild on /who")
+Equal(select(2, CoverOver(whoMe, whoMe.GuildName)), false, "the made-up guild over it gone")
 Equal(T(MailItem1Sender) .. "|" .. T(MailItem1Subject), "Brannoc Stonehelm|Thanks Zriel", "the inbox back")
 Equal(T(OpenMailInvoicePurchaser), "Purchased by: Grubb Fizzwick", "the invoice back")
 True(not S[SendMailNameEditBox].password, "the To box readable")
@@ -1036,6 +1138,12 @@ P:Set("myTag", "Other#42")
 Run(FriendsFrame_CheckBattlenetStatus)
 Equal(H.Writes() .. " " .. T(FriendsFrameBattlenetFrame.Tag), "0 " .. REAL_TAG, "off: a made-up BattleTag typed now touches nothing")
 P:Set("myTag", "Fake#9999")
+P:Set("myGuild", "Iron Wolves Kin")
+Run(function() guildRow:Init(elementData[guildRow]) end)
+Run(function() whoMe:InitButton(elementData[whoMe], false) end)
+Equal(H.Writes() .. " " .. T(guildRow.Name) .. " " .. H.Alpha(whoMe.GuildName) .. " " .. tostring(select(2, CoverOver(whoMe, whoMe.GuildName))),
+    "0 Knights of Zriel 1 false", "off: a made-up guild typed now touches nothing")
+P:Set("myGuild", "Lancers of Elwynn")
 
 -- An open letter put back as it shows.
 Run(function()

@@ -2,8 +2,10 @@
 
 Personal and unpublished (no CurseForge, no GitHub remote). By Squirt, original code,
 Interface 16001, Lua 5.1, All Rights Reserved. Settings: `ForeverEnhancedPrivacyDB` (account-wide).
-`/privacy` opens the window; `/privacy on|off|toggle`; `/privacy minimap` shows or hides the minimap button.
-Key: Key Bindings > AddOns > Toggle private mode. Minimap button: left-click on/off, right-click the window.
+`/privacy` opens the window; `/privacy on|off|toggle`; `/privacy minimap` shows or hides the minimap button;
+`/privacy brb` shows or hides the be right back screen; `/privacy inbox` shows or hides the whisper inbox.
+Keys: Key Bindings > AddOns > Toggle private mode, and Toggle be right back screen. Minimap button: left-click on/off,
+right-click the window, shift-click the whisper inbox.
 
 Feasibility research (the safe hook for every surface, what is secret where): the main session's
 `scratchpad/privacy-check-1.json` and `privacy-check-2.json`.
@@ -12,18 +14,20 @@ Feasibility research (the safe hook for every surface, what is secret where): th
 
 | File | What it covers |
 | --- | --- |
-| Core.lua | Every setting's row (P.PAGES, P.SECTIONS, P.ROWS, P.KEYS: one table, the window and defaults come from it), saved settings, private mode and its modes, `/privacy`, the key binding, Options > AddOns, the modules, the record of changes and putting it back, CVars (saved originals, crash recovery, combat queue), screenshots |
-| Theme.lua | The window's look (palette from the mockup, ticks, options, choice rows, text box, scroll) |
+| Core.lua | Every setting's row (P.PAGES, P.SECTIONS, P.ROWS, P.KEYS: one table, the window and defaults come from it; a row with `run` and no key is a button, not a setting), saved settings, stores (saved things that aren't settings: `P:Store`, kept by Reset), private mode and its modes, `/privacy`, the key binding, Options > AddOns, the modules, the record of changes and putting it back, CVars (saved originals, crash recovery, combat queue), screenshots |
+| Theme.lua | The window's look (palette from the mockup, ticks, options, choice rows, text box, scroll, the count badge) |
 | Names.lua | What names become (all the naming helpers below), and the "Names" module that notes group, guild and friends names while private |
 | UnitFrames.lua | playerFrame, charTitles, ownHead, targetFrames, groupFrames, nameplates, otherHeads, petNames |
 | Chat.lua | chatNames, publicChannels, instChat, whispers, cleanOld, channels, timestamps, bubbles |
 | Social.lua | friends, bnToasts, whoList, roster, news, guildName, mail, groupFinder, calendar |
 | Windows.lua | popups, readyCheck, menus, trade, loot, meter, professions, scoreboard |
 | World.lua | questText, tooltips, craftedBy, zoneText, coords, zonePopups, clock, worldMap, gold |
-| Window.lua | The settings window (the approved mockup: pages, ticks, choices, Overview with your name and made-up BattleTag boxes, the eye's and the minimap button's ticks, preview, footer notes, credit; Reset all settings at the bottom right of the Overview) |
-| Eye.lua | The small eye at the top of the screen while private (hidden during screenshots) |
-| MinimapButton.lua | The minimap button (below): private mode on/off, the window, dragged round the minimap, hidden during screenshots |
-| Bindings.xml | The key binding (calls `ForeverEnhancedPrivacy_Toggle()`); loads on its own, not in the TOC |
+| Window.lua | The settings window (the approved mockup: pages, ticks, choices, Overview with your name, made-up BattleTag and made-up guild boxes, the eye's and the minimap button's ticks, the be right back screen's message box and Show button, preview (with your own tooltip and its guild line, and the be right back screen in small), footer notes, credit; Reset all settings at the bottom right of the Overview) |
+| Eye.lua | The small eye at the top of the screen while private (hidden during screenshots), with the inbox's count beside it |
+| MinimapButton.lua | The minimap button (below): private mode on/off, the window, dragged round the minimap, hidden during screenshots; the inbox's count, shift-click opens the inbox |
+| BeRightBack.lua | The be right back screen (below): a full-screen card with your message and how long you've been away, its key, Escape through a stand-in on the game's list |
+| Inbox.lua | The whisper inbox (below): whispers Hide whispers keeps out of chat, kept in the saved settings, a count in chat, its own window to read and reply |
+| Bindings.xml | The two key bindings (call `ForeverEnhancedPrivacy_Toggle()` and `ForeverEnhancedPrivacy_BeRightBack()`); loads on its own, not in the TOC |
 
 The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("experimental",
 "hide only") are quiet lower-case words after the label.
@@ -57,7 +61,28 @@ The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("expe
   ever copied: the newer header's copy button stays under our strip (an addon can't put text on the
   clipboard, so there's no copying the made-up one either). The preview has no BattleTag, so it doesn't
   show it.
-- Name colour (Overview, under "Your name becomes" and "Your BattleTag becomes"; `myColour`, default `game`,
+- Your guild becomes (Overview, right under "Your BattleTag becomes" and styled the same; `myGuild`, default
+  `""` = as before, added 2026-10-14 for 1.1.0; the user: "can we enter a fake guild name if we wanna show
+  our fake name and guild name?"): a made-up guild shown instead of hiding yours, only while private mode is on
+  and "Your guild's name" (`guildName`) is ticked (`P:MyGuild()` checks both and returns nil otherwise), and only
+  where the addon hides YOUR guild's name: your own tooltip's guild line (World, with Player tooltips ticked:
+  `<Made-up Guild>` in the line's own colour, only while `IsInGuild()` plainly says you're in one, so the line
+  under your name really is a guild line; the tooltip is yours by token, GUID or the mouseover, the way its name
+  line is found), your guild's row in the guild and community list (Social `ClubRow`: only a club the game marks
+  `isClub`, never another guild's invitation, ticket or guild finder invitation) and your own /who row's guild
+  (Social `WhoGuild`, under whoList: our own text laid over the hidden column in the column's colour, never
+  rewritten; Social's Apply re-labels the whoList lists when guildName changes, `ALSO`). Tidied by `P:CleanGuild`
+  (as `P:CleanName`, plus "<" and ">" dropped since the tooltip adds its own; at most `P.GUILD_MAX` = 24 letters),
+  checked and tidied again at load, in `P.NAME_KEYS`. Never above your head (the game draws that: ownHead hides
+  only), never for other players (their tooltips' guild lines stay blank; the inspect tab is always someone
+  else's guild, so it stays "Guild"), never coloured (the Name colour plays no part). The Hidden style leaves a
+  typed guild. A tooltip line is only ever changed, never added, so in no guild there's no line to put it on.
+  Windows.lua has nothing to swap: the guild invite's leave warning is already the game's generic one (no guild
+  named), and charters are guilds not formed yet. The window grew 62 (580 to 642 high) for the box; the preview
+  grew with it and gained a card for your own tooltip between the party and the chat (your name, and under it
+  your real guild from `GetGuildInfo("player")`, blank while private hides it, or the made-up one).
+- Name colour (Overview, under "Your name becomes", "Your BattleTag becomes" and "Your guild becomes" (which it
+  never colours); `myColour`, default `game`,
   added 2026-10-11): your typed name's (and made-up BattleTag's) colour while private: Game's own, Purple,
   Your class colour or White. Game's own is
   no colour of ours: unit frames keep their own (gold), a tooltip line the colour the game drew it in,
@@ -80,12 +105,15 @@ The owner of each row is the `owner` field in Core.lua's P.SECTIONS. Tags ("expe
   (Escape too) puts the button back; a setting changing meanwhile doesn't. Reset saves a name being typed
   first (so it's emptied with the rest), then `P:Reset()`: private mode off through `P:SetPrivate(false, "reset")`
   (every module's Apply(false), every swap, cover and CVar put back, the backups emptied), then every key in
-  `ForeverEnhancedPrivacyDB` dropped, so each setting is its default (`P.DEFAULTS`): your name and BattleTag
-  empty, "With its key", class names, the game's own colour, the eye on, the minimap button shown at its first spot,
+  `ForeverEnhancedPrivacyDB` dropped, so each setting is its default (`P.DEFAULTS`): your name, BattleTag,
+  guild and be right back message empty, "With its key", class names, the game's own colour, the eye on, the minimap button
+  shown at its first spot,
   every tick and choice as it started.
   Only `wasOn = false` and `cvarBackup` stay: empty, unless a CVar couldn't be put back (in combat), when its
-  original waits there and goes back when the fight ends (the usual combat queue), or at the next login.
-  Listeners hear "reset" (the window refreshes every control and the preview, the eye hides), and chat says
+  original waits there and goes back when the fight ends (the usual combat queue), or at the next login. The stores
+  stay too (`inbox`, the kept whispers: yours, not options; Reset's note says "Your key bindings and kept whispers stay.").
+  Listeners hear "reset" (the window refreshes every control and the preview, the eye hides, a showing be right back
+  screen says "Be right back" again but stays up: it isn't a setting), and chat says
   "Forever Enhanced Privacy: Settings reset." once. The key binding is the game's (Key Bindings), so it stays.
 - Nothing does work while private mode has never been on this session: modules are set up lazily, apart
   from the registrations the feasibility check says to make at load (tooltip post-calls, menu callbacks)
@@ -103,7 +131,9 @@ it later (EraUI not changed for it).
   window's soft grey while off. It hears every listener notice (private, reset, any setting), so the key, the big
   button, /privacy on and Reset all show on it at once.
 - Left-click: `P:SetPrivate(not P:Private(), "minimap")`, as the big button: quiet (no chat line), kept over a /reload.
-  Right-click: `P.ToggleWindow()`. A click within .2 s of letting go of a drag is the drag's, so ignored.
+  Right-click: `P.ToggleWindow()`. A click within .2 s of letting go of a drag is the drag's, so ignored. Shift-click
+  (either button, 1.1.0): the whisper inbox, private mode left alone. While whispers wait, a count at its top right and
+  two more hover lines (see "The whisper inbox"); made only once there are any, so the button's own look is unchanged.
 - Drag (left button): follows the cursor round the minimap's edge (`isMoving` set meanwhile, so minimap tidiers don't
   fade it), saved once let go as `minimapAngle`: degrees anticlockwise from the right, whole numbers, default 165
   (`P.MINIMAP_ANGLE`: the left edge a little above the middle, clear of the siblings: Clam Opener 200, the cooldown
@@ -130,6 +160,143 @@ it later (EraUI not changed for it).
   self-check feeds it made-up lines to prove that).
 - The hover box's words are checked to fit it (TestMinimap, at the harness's six units a letter); the cursor's sibling
   shows the same "Drag: move it round the minimap" in a box as wide, so it fits in game too.
+
+## The be right back screen
+
+BeRightBack.lua, added 2026-10-14 for 1.1.0 (the user picked it from three ideas on 2026-10-11: one key binding, a
+full-screen card with their own text, default "Be right back"). Test: `Tools/TestBeRightBack.lua`.
+
+- `ForeverEnhancedPrivacyBeRightBack`, our own frame, made the first time it's asked for: a child of `UIParent`, all points
+  on it (and sized from it as it's made), strata TOOLTIP (the top one) at level 5000, so it sits over the game's windows, the
+  game menu, pop-ups (DIALOG), toasts, the low health glow (`LowHealthFrame`, FULLSCREEN_DIALOG and toplevel on Forever) and
+  the game's frames at TOOLTIP that stay up without the mouse: an item link window opened from chat (`ItemRefTooltip`), the
+  Lua error window (`ScriptErrorsFrame`) and the queue status box (`QueueStatusFrame`), all TOOLTIP in the forever branch's
+  XML. It was FULLSCREEN_DIALOG until review (2026-10-14) found those three drawn over it. Our own frame, so its strata
+  is safe to set in a fight. The window's dark fill, solid, edge to edge; the window's accent line
+  along the top; the eye (Media/Eye.tga, cropped as Eye.lua does, 64 by 40, in the accent) above the middle; your message
+  under it in the game's font at 40 (GameFontNormalHuge's file, `SetFont`), centred, wrapping 80 in from each side; under that
+  "Away for 12 sec" / "3 min" / "1 hr" / "1 hr 5 min" in the window's soft grey, counted from when it came up
+  (`GetTime()`), redrawn once a second by the card's own OnUpdate (so only while it shows). A click shows "Press Escape to
+  come back." at the bottom for 4 seconds (the card says nothing about controls otherwise: stream viewers see it).
+- The message: `brbText` (default `""` = "Be right back", `P:BrbText()`), the Overview's box, tidied by `P:CleanBrb`
+  (`P:CleanName` at `P.BRB_MAX` = 40 letters), checked and tidied again at load. Not a name key: no module hears of it. A
+  change shows on a showing card at once (it's a listener). Reset empties it; the card itself isn't a setting, so it stays.
+- Brought up and taken down by its key (Key Bindings > AddOns > "Toggle be right back screen", `FEPRIVACY_BRB`, no heading
+  of its own so the game lists the addon's heading once), `/privacy brb` (quiet, as the key) and the Overview's Show button
+  (Escape or the key takes it down). Private mode on or off, never changed by it. Session only: a /reload drops it.
+- Mouse yes, keyboard never: `EnableMouse` and `EnableMouseWheel`, so clicks and the wheel stop at it; no `EnableKeyboard` or
+  `SetPropagateKeyboardInput` (TestRules now refuses both anywhere): every key reaches the game, so moving, chat and
+  abilities still work under it, and Escape stays the game's. Taking keys was the other choice ("any key closes it"): on
+  Forever `EnableKeyboard` is a protected function and `SetPropagateKeyboardInput` is restricted (its own API docs,
+  SimpleFrameAPIDocumentation), a frame that takes keys can swallow Escape, and a cat on the keyboard would drop the cover.
+- Escape: Forever's Escape is `ToggleGameMenu` (Blizzard_GameMenuEsc, read from the Gethe forever branch): prioritised
+  handlers, pop-ups first, then the game menu, ..., then `CloseAllWindows` (AddOnPost), which hides every frame named in
+  `UISpecialFrames`; if nothing took the key, the game menu opens. The card itself isn't on that list: `CloseAllWindows`
+  also runs at PLAYER_CONTROL_LOST (a stun or fear, not a taxi), PLAYER_ENTERING_WORLD (every loading screen), PLAYER_DEAD,
+  when the UI comes back after Alt+Z and when a full-screen panel opens, which would drop the cover mid-break. A stand-in
+  goes on the list instead: `ForeverEnhancedPrivacyBeRightBackEscape`, an empty 1 by 1 frame under the card, shown while
+  the card is. When it's hidden (`OnHide`), `dropped` is set; `hooksecurefunc("ToggleGameMenu")` runs right after, and if
+  `dropped` it was Escape: the card goes. Anything else: next frame (`C_Timer.After(0)`) the stand-in is shown again, the
+  card never left. Closing the card takes the stand-in off the list too, so a later Escape opens the game menu as ever.
+  `RegisterGameMenuEscHandler` (Forever's own way to add an Escape step) was left alone: our entry would sit in Blizzard's
+  handler table and taint every later Escape press.
+- The game menu is never under it: `GameMenuFrame:HookScript("OnShow")` takes the card down whenever the game menu shows.
+  Brought up while the game menu is already open, the card covers it; Escape then closes the menu first (the game's own
+  order), the card with the next. A pop-up under the card closes first too, as Escape always does.
+- Escape also closes every other listed window at the same press (bags, the settings window: the Show button's window goes
+  too). That's `CloseAllWindows`, as for any listed window.
+- Screenshots: nothing. Shown, it's in the picture on purpose (the point while streaming); "For screenshots" turns private mode
+  on and off for the picture but never brings the card up. The eye and minimap button still step aside as before (they're
+  under the card anyway).
+- Both hooks go in when the card is first made, never at load; each through `P:Guard` with its own ending, as is its
+  listener (an error is said once as "The be right back screen part hit an error, so Escape may not take it down. Its key
+  still does." / "so it may stay over the game menu. Escape or its key still take it down." / "so it may not show a new
+  message at once."), never the core's "so it may miss some names.", since this part has no names.
+- The Overview: under Extras' ticks, heading "Be right back screen" at 476, its box at 494 (260 wide, placeholder "Leave
+  empty for "Be right back"", at most 40 letters, saved like the name boxes) with a Show button (80 wide, the window's
+  button look) at the column's right edge; the key note moved to 536 and now reads "Set both keys in the game's Key
+  Bindings, under AddOns." The window grew 62 again (642 to 704 high), the left column 500 to 562, the preview 416 to 478 with a small card at its foot (the accent line,
+  the eye, your message on one line, "Away for 3 min"), whatever private mode is doing. Show saves a message being typed
+  first. Reset's note now says "every box on the Overview is emptied ... Your key bindings stay."
+- The window fits any UI scale (Window.lua's `Fit`, on every OnShow): 768 is the screen's height at a UI scale of 100%,
+  not the largest. Forever's UI scale slider goes from 65% to 115% (Blizzard_SettingsDefinitions_Shared/Graphics.lua on the
+  forever branch), and at 115% the screen is 768 / 1.15, about 668 high, so from about 109% up a 704 window (642 at 115%
+  just fitted) would lose its footer, where every help line shows; `SetClampedToScreen` can't help with a frame taller
+  than the screen. So when the screen is under the window plus 8 each side, the window takes `SetScale` (our own frame
+  only; the game's UI scale is only read, through `UIParent:GetWidth()` / `GetHeight()`) to fit both ways (a 5:4 screen
+  at 115% is about 835 across, under 900), never below .5. At 115% it comes out at about .93. A UI scale changed while it's
+  open fits the next time it opens. Review (2026-10-14) caught the old "704 fits the 768 of the largest UI scale" here.
+- Known limits: Alt+Z hides it with the rest of the UI (it's a child of UIParent; a frame outside UIParent wouldn't follow
+  the UI scale), and the first Escape after Alt+Z brings the UI back and takes the card down together. It covers what the
+  game draws as UI; check in game that nothing of the world (the minimap's arrow, damage numbers) shows through. The Lua
+  error window and the item link window are toplevel at TOOLTIP: one that shows (or is clicked) while the card is up
+  might be raised over it; unproven, the in-game checks have a step for it.
+
+## The whisper inbox
+
+Inbox.lua, added 2026-10-14 for 1.1.0 (the user's agreed design: whispers hidden by Hide whispers go into a private inbox
+instead of being lost). Test: `Tools/TestInbox.lua`.
+
+- What's kept: while private mode is on, `whispers` (Hide whispers) is ticked and `whisperInbox` ("Keep hidden whispers in
+  an inbox", Chat's row under Hide whispers on the Chat page, on by default: it only keeps what's already hidden), each
+  CHAT_MSG_WHISPER and CHAT_MSG_BN_WHISPER, read from our own event frame (never the chat frames), registered the first
+  time private mode is on this session. Never kept: a GM's whisper (flags "GM": Forever's chat handler sends those to its GM
+  chat before any filter, so they're never hidden; Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua on the forever
+  branch), one the game shows nowhere (the 16th value, hide sender in letterbox), your own (by name or GUID), your whispers
+  out (WHISPER_INFORM), away and busy replies, and Battle.net's offline notice.
+- Locked whispers (secret values, in dungeons, raids, battlegrounds): Forever skips addon filters when any value can't be
+  read (`canaccessvalue(...)` in ChatFrameFilters.lua), and Chat's OnEvent hook takes the line out with Hide whispers. Kept
+  as an entry with its time and "(hidden)" for whatever the game wouldn't say (sender, words or both), because skipping it
+  would lose even the fact that someone whispered; a readable part is kept (a sender alone can still be answered). Nothing
+  secret is read, compared, joined or kept. Not kept while private mode is on only for a screenshot (Chat leaves locked lines
+  in chat then), unless Clean lines already in chat is ticked: Chat's own `OneWayAllowed` rule.
+- An entry: `at` (`time()`), `from` (the sender as the event names them, "First Surname"; never with a "|"), `to` (the
+  character it came to, "First Surname", player whispers only), `class` (`GetPlayerInfoByGUID`, for the window's colour),
+  `text`, `bn`, `read`. Battle.net: the sender is a protected `|K` string that only works this session, so it's held in a
+  weak table in memory with the account id (the 13th value) and never saved; after a /reload the entry shows "Battle.net
+  friend" (no "battle.net" tag after it) and can't be answered here. At most 50 (`MOST`) for the whole account: the oldest
+  read one goes first, else the oldest. Saved through the core's store (`P:Store("inbox")`, `ForeverEnhancedPrivacyDB.inbox`),
+  checked at PLAYER_LOGIN (`Clean`: only the fields above, right types and sizes, no "|" in a name or `to`, a class like
+  "WARRIOR"; a player's whisper with no `to` dropped; then `Tidy` drops the read ones and cuts to 50).
+- "Kept until read" (the agreed design; review 2026-10-14): a read whisper lasts the session it was read in and goes at the
+  next login or /reload; unread ones are kept by /reload and Reset all settings. The saved settings file (WTF) holds real
+  names and words until then.
+- Each character its own (review 2026-10-14): the saved variables are account-wide, so a player's whisper keeps `to` and is
+  only listed, counted (chat's line, the eye, the minimap button), chosen, answered, marked read, deleted or cleared on that
+  character (`Mine`, used by `Count`, `Unread`, `Entries`, `Target`, `Find`, `MarkAllRead`, `Clear`). A reply from another
+  character would tie it to the first: that was the review's major finding. Battle.net whispers have no `to` and show on
+  any character (they came to the account; after a relog they're "Battle.net friend" with no reply anyway). Clear all only
+  takes what this character sees; another character's whispers wait for it. Your name (`P:MyNames()`'s full name) is asked
+  at login and kept for the session (`Me`); a whisper kept before the game says it is this session's (`unsure`, a weak
+  table), given `to` once the name is known, else dropped at the next login (never shown on another character). A renamed
+  character's old whispers stay hidden until the cap drops them.
+- Chat says only a count: "2 whispers waiting. Type /privacy inbox to read them." (or "1 whisper waiting. ... read it."),
+  through `P:Print`: 2 seconds after the first of a burst, then at most one line a minute (`BURST`, `GAP`), nothing while the
+  window is open or once they're all read; at login (a /reload too) once if any are unread. Never a name or a word.
+- Counts: the minimap button (top right, 14) and the eye (beside it, 12) show the unread count (`T:Badge`: an accent dot,
+  1 to 9 then "9+"), made the first time there are any; both are hidden in screenshots with their parents. The minimap
+  button's hover box gains "N whispers waiting" (unread) and "Shift-click: whisper inbox" (any kept), its height following
+  its lines; a shift-click (either button) opens or closes the inbox.
+- Listeners hear "inbox" (`P:Notify`) on every change, so the eye, the minimap button and both windows follow.
+- The window (`ForeverEnhancedPrivacyInbox`, 440 by 480, DIALOG, toplevel, movable, on `UISpecialFrames` for Escape): made
+  the first time it opens (`/privacy inbox`, the Chat page's "Open the whisper inbox" button under the inbox tick, or a
+  shift-click on the minimap button). "Whisper inbox", "Real names show here, so open it off stream." in gold, the unread
+  count, then rows newest first: sender in their class colour (a quiet "battle.net" after a friend), the time ("14:32"
+  today, "13 Oct, 14:32" before: your clock, off stream), the words wrapped, an accent mark while unread. Click one: read,
+  its edge in the accent, "Reply to Name" and a reply box (focused); Enter sends, Escape lets go of the box. The reply line
+  is one line (no wrap, 404 wide), so each of its texts must fit (TestInbox checks them): "Click a whisper to reply to it.",
+  "Reply to Name", "After a /reload, reply to this one from your friends list." (Battle.net after a reload), "The game hid
+  who sent this one, so it can't be answered here." Mark all read, Delete (the chosen one), Clear all (asks first, "Clear
+  every whisper?", Clear ignores clicks for half a second as Reset); all three only this character's. The empty note: "No
+  whispers kept for this character. ... Read ones go at your next login or /reload." Hidden by alpha from
+  SCREENSHOT_STARTED to the end (it shows real names), as the eye steps aside.
+- Replies: from our own box, the way Forever's chat box sends (ChatFrameEditBox.lua `SendText`): `C_ChatInfo.SendChatMessage
+  (text, "WHISPER", nil, sender)` or `C_BattleNet.SendWhisper(accountId, text)`. Never the game's chat box: Forever's own
+  helpers (`ChatFrameUtil.SendTell`, `SendBNetTell`, `OpenChat`) would set its tell target, chat type and text from our code,
+  which the rules forbid (the chat box is security-sensitive). While `C_ChatInfo.InChatMessagingLockdown()` says the game
+  blocks addon chat, nothing is sent and the window says to reply from chat; a refused send says so too. A reply's own echo
+  is Hide whispers' as ever. This also answers the old known cost that a hidden whisper doesn't set R.
+- The preview has no incoming whisper to show it on, so it doesn't.
 
 ## The module contract
 
@@ -169,9 +336,10 @@ end
   - `Apply(true, key)` with one of your row keys: that setting just changed while private. If it's
     now off, the core has already put back what's recorded under it; put back anything else of
     yours for it. If it's now on (or a choice changed), apply it.
-  - `Apply(true, key)` with a key in `P.NAME_KEYS` (`nameStyle`, `myName`, `myColour`, `myTag`): sent to
-    every module: re-label what's showing. (`myTag` only shows in Social's headers; the others re-label
-    anyway or, like Chat, skip it, which writes nothing new.)
+  - `Apply(true, key)` with a key in `P.NAME_KEYS` (`nameStyle`, `myName`, `myColour`, `myTag`, `myGuild`): sent
+    to every module: re-label what's showing. (`myTag` only shows in Social's headers, `myGuild` in Social's
+    lists and World's tooltips (from the next tooltip); the others re-label anyway or, like Chat, skip it,
+    which writes nothing new.)
   - Apply must be safe to run twice in a row (idempotent).
 - While private mode is off, every hook, filter and post-call returns at once:
   `if not P:IsOn(KEY) then return end` first (a chat filter returns nothing, which means unchanged).
@@ -182,7 +350,7 @@ end
 - `P:Private()`: private mode is on.
 - `P:IsOn(key)`: private mode is on and the row is ticked; for a choice row, its value isn't `"leave"`.
 - `P:Get(key)`: a setting's value (`"names"|"chat"|"leave"` for instChat, `"hide"|"leave"` for worldMap,
-  `"class"|"player"|"hidden"` for nameStyle, the typed `myName` and `myTag`, `"game"|"accent"|"class"|"white"`
+  `"class"|"player"|"hidden"` for nameStyle, the typed `myName`, `myTag` and `myGuild`, `"game"|"accent"|"class"|"white"`
   for myColour, booleans for ticks).
 - Never call `P:Set` or `P:Reset` from a module (the window does that).
 
@@ -225,13 +393,17 @@ while private, or when private mode turns off.
 
 ### Other helpers
 
-- `P:Guard(M, fn)`: a safe copy of fn: an error is said once ("The <Module> part hit an error...") and
-  swallowed (returns nothing); answers pass through, nils included.
+- `P:Guard(M, fn [, tail])`: a safe copy of fn: an error is said once ("The <Module> part hit an error, so it may
+  miss some names. <error>") and swallowed (returns nothing); answers pass through, nils included. `tail` replaces
+  "so it may miss some names." for a part that isn't about names (the be right back screen).
 - `P:OnAddOnLoaded(name, fn, M)`: runs fn once Blizzard's load-on-demand addon `name` has loaded
   (now, if it has). Errors are said once against M.
 - `P:InCombat()`, `P.IsSecret(value)` (safe when the game has no `issecretvalue`).
 - `P:Print(text)`: chat, prefixed with the addon's name. `P:Say(text)`: the window's footer if open,
   else chat. Modules never call `print` or `AddMessage` themselves (TestRules).
+- `P:Store(name [, make])`: a saved table that isn't a setting (only `inbox` so far), made when first asked for (`make`
+  false: only looked for); kept by Reset all settings, dropped at load if it isn't a table. `P:Notify(what)`: every
+  listener hears `what` (the inbox's "inbox"). Neither is for the modules.
 
 ### Names (Names.lua)
 
@@ -250,6 +422,9 @@ secret.
   name style with your class (the Name colour plays no part then).
 - `P:MyTag()`: your made-up BattleTag (`myTag`) in the same Name colour (none for `game`), or nil when none
   is typed. Only for where your own BattleTag shows (Social's headers).
+- `P:MyGuild()`: your made-up guild (`myGuild`), plain (no colour), while private mode is on and `guildName`
+  is ticked; else nil (nothing typed, or the tick off). Only for where your own guild's name is hidden.
+- `P:GuildLine(guild)`: a guild's name as a tooltip's guild line, `<Guild>`.
 - `P:StyleLabel(classFile)`: class style: the class name in its colour ("Player" if classFile is nil
   or unknown); player style: "Player"; hidden: "".
 - `P:PetLabel()`: "Pet" ("" when hidden).
@@ -279,7 +454,8 @@ secret.
 - Only `hooksecurefunc` post-hooks, `HookScript`, Blizzard's filters (`ChatFrameUtil.AddMessageEventFilter`
   / `AddSenderNameFilter`, `TooltipDataProcessor` post-calls, `Menu.ModifyMenu`) and cosmetic setters on
   regions (`SetText`, `SetFormattedText`, `SetTextColor`, `SetVertexColor`, `SetAlpha`; Show and Hide only on
-  regions that aren't protected). Never replace a Blizzard function, never write a key on a Blizzard
+  regions that aren't protected; `SetTextInsets` only on the chat edit box, where its typed text starts, as the
+  game sets it). Never replace a Blizzard function, never write a key on a Blizzard
   frame, never hook a method on a protected frame (prefer the global function or the FontString), never
   Show/Hide/SetPoint/SetSize a protected frame, never call a Blizzard function yourself (`Name_Update` and
   friends: TestRules refuses any `Upper_Case(` call), never `SetOverrideBinding` (refused).
@@ -355,7 +531,8 @@ secrets (a `secret...` unit, `H.SECRET` text) cause no violation, CVars aren't t
   `Minimap` (sealed, 140 across, so every test makes the minimap button at PLAYER_LOGIN; TestMinimap gives it a
   `GetCenter` with `rawset` for dragging, and a `GetCursorPosition`), `ChatFrame1` and `GameTooltip`.
 - Blizzard's objects are sealed: a key written on one, a method other than a read (`Get`, `Is`, `Has`,
-  `Can`, `Enumerate`, `Num`, `Does`), `HookScript`, a cosmetic setter or a chat history edit
+  `Can`, `Enumerate`, `Num`, `Does`), `HookScript`, a cosmetic setter (`SetTextInsets` among them, on what isn't
+  protected; every object has text insets to read back) or a chat history edit
   (`TransformMessages`, `RemoveMessagesByPredicate`) called on one, or a hook on a protected one, is
   a recorded violation. That covers the methods a test gives an object (fields, or `rawset` after): a
   sealed object keeps its functions apart, `rawset`/`rawget` reach them as on the game's frame, and a
@@ -398,7 +575,7 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
 - `node Tools/RunTests.mjs`: everything below in one go (each Lua test must end "TestX: N checks
   passed"); exits 1 on any failure.
 - `& 'C:\AddonDev\_Toolchain\lua-check\node_modules\.bin\fengari.cmd' Tools/TestCore.lua` (and TestWindow,
-  TestMinimap, each module's Test<Module>.lua)
+  TestMinimap, TestBeRightBack, TestInbox, each module's Test<Module>.lua)
 - `$env:FENGARI='C:\AddonDev\_Toolchain\lua-check\node_modules\fengari'; node --test Tools/TestLuaLimits.mjs`
 - `node --test Tools/TestRules.mjs`
 - `node 'C:\AddonDev\_Toolchain\lua-check\check.js' (Get-ChildItem *.lua, Tools\*.lua)`
@@ -417,6 +594,15 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
   header's status menu. Clicking the copy button's spot copies nothing (no "copied" line in chat). Emptied:
   your typed name, else "Battle.net"; private off or friends unticked: the real BattleTag and the copy
   button back.
+- Your guild becomes (1.1.0): the window, now 642 high, fits on screen at your UI scale; the box sits under
+  "Your BattleTag becomes" and looks the same, Name colour, Extras and the key note below it, clear of the
+  footer; the preview's tooltip card sits between the party and the chat, and the chat lines still wrap
+  inside their box. Hover yourself while private (Player tooltips and Your guild's name ticked, in a guild):
+  the line under your name reads `<Made-up Guild>` in the game's guild-line colour; someone else's guild line
+  stays blank. Whether Forever's own guild line really is `<Guild>` (compare with private off). The guild
+  window's list shows the made-up guild on your guild's row only. /who yourself: the made-up guild in the guild
+  column, right-click still works. Emptied, or Your guild's name unticked: as before. No Lua errors with
+  `/console taintLog 0` while hovering yourself in and out of combat.
 - The window: sizes, fonts and wrapping (title over two lines, option buttons fit, rows fit two columns,
   preview chat lines wrap inside their box, footer notes fit two lines), the heart tinted purple, Escape
   closes it, Options > AddOns opens it.
@@ -441,6 +627,27 @@ From `C:\AddonDev\ForeverEnhancedPrivacy`:
   "Show a small eye" and "Show a minimap button" side by side, each label inside its tick, clear of the preview; untick
   hides the button, `/privacy minimap` brings it back. No errors clicking it in combat (`/console taintLog 0`). Once
   EraUI's Clean Minimap lists it (not yet), it fades with the others but never mid-drag.
+- The be right back screen (1.1.0): Key Bindings > AddOns lists "Toggle be right back screen" under the addon's one
+  heading. The window, now 704 high, fits at your UI scale, and at 115% (Options > System > Graphics, UI Scale ticked) it shrinks a little
+  so its whole footer still shows; the box and Show button sit under the Extras' ticks, the key
+  note under them, clear of the footer; the preview's small card at its foot. Show, the key and `/privacy brb`: the card
+  covers everything (action bars, chat, minimap, the eye, nameplates, the world; check the minimap's arrow and damage
+  numbers don't show through); the message is big and centred; "Away for" counts each second, then minutes. Clicks and the
+  wheel do nothing under it; a click shows "Press Escape to come back." for a moment. W still walks you forward. Escape
+  takes it down with no game menu; the next Escape opens the menu. Bags open, then the card, then Escape: both close. Get
+  stunned or die with it up (a loading screen too): it stays, and Escape still takes it down. Print Screen with it up: it's
+  in the picture; with "For screenshots" and it down: never in the picture. In combat with `/console taintLog 0`: up, down,
+  Escape, the game menu: no Lua errors or blocked actions. An item link window opened from chat before it comes up stays
+  under it. With Lua errors shown, `/run error("test")` typed while it's up: does the error window come up over it or stay
+  under (toplevel raising at TOOLTIP is unproven)?
+- The whisper inbox (1.1.0): the Chat page's tick under Hide whispers and the button under it; with Hide whispers ticked and
+  private on, a whisper and a Battle.net whisper stay out of chat and the count line comes once ("2 whispers waiting...", no
+  names); the minimap button's and the eye's counts sit well at their size; the hover box's extra lines fit; shift-click opens
+  the inbox; rows, colours, times and wrapping; a reply reaches them (and a Battle.net one); a /reload keeps the unread
+  whispers and drops the read ones (a friend's then "Battle.net friend", its reply line in full); another character on the
+  account sees none of the first one's player whispers (no count, no row), only Battle.net ones; in a dungeon, a whisper becomes a "(hidden)" entry with no Lua errors, and whether
+  `C_ChatInfo.InChatMessagingLockdown()` is true there; whether the window is out of a Print Screen picture; no errors with
+  `/console taintLog 0`, and slash commands from the chat box still work after replying from the inbox.
 - A CVar left changed by a crash comes back at the next login.
 - Every CVar-backed setting, with `/console taintLog 0` as usual: tick each one (ownHead, otherHeads,
   timestamps, bubbles, coords, clock), turn private mode on and off a few times (key and "For
@@ -499,13 +706,16 @@ Needs an in-game check:
 
 ### Chat
 
-Chat.lua owns chatNames, publicChannels, instChat, whispers, cleanOld, channels, timestamps and bubbles. It also does the
+Chat.lua owns chatNames, publicChannels, instChat, whispers, whisperInbox, cleanOld, channels, timestamps and bubbles
+(whisperInbox's work is Inbox.lua's, "The whisper inbox" above: Chat has nothing to apply or put back for it). It also does the
 chat side of rows owned elsewhere: loot and roll lines follow `loot`, ready check lines follow `chatNames`
 (and `instChat` in dungeons), the guild message of the day in chat follows `news`, and Battle.net
 came-online lines follow `chatNames` or `bnToasts`. Test: `Tools/TestChat.lua` (Blizzard's chat stood in for inside the test file:
 chat frames with their history and the secure mixin's TransformMessages / RemoveMessagesByPredicate, the
 message handler (as Forever's: only players' lines keep their event and the event's own values; the game's own
-lines, joins and /chatlist are added bare), edit box headers, whisper windows; nothing added to the harness).
+lines, joins and /chatlist are added bare), edit box headers (sized to their text, cut to half the box with "..." after, the
+typed text started past them as Forever's UpdateHeader does), whisper windows; the harness gained only text insets for it,
+SetTextInsets allowed on what isn't protected).
 
 | Surface | How | Key |
 | --- | --- | --- |
@@ -513,13 +723,13 @@ lines, joins and /chatlist are added bare), edit box headers, whisper windows; n
 | Names in text, NPC lines (`$N`), system lines, rolls, joins, duels, ready checks | `AddMessageEventFilter` on each event: the game's own lines matched against their global strings (templates, `%1$s` order kept, only the values that are names, a capture must look like "First" or "First Surname"); player links show a label (data kept); `P:ReplaceNames` for known names; `\|K...\|k` Battle.net names | chatNames |
 | Public channels: General, Trade (and its Services and Local channels) and LookingForGroup | With the tick on, other players' names there are left as the game sends them (the sender filter returns nothing for them, the text and /chatlist swap only your name: `SwapMine`, `P:ReplaceNames(..., mineOnly)`, `SwapList(list, true)`, join notices only yours); your own name is still swapped (you talking, your name or a link to you in their lines; someone noted whose full name starts with your first name is left whole), and Battle.net `\|K` names (your friends') still hidden. Senders are still noted (`P:Learn`), so their names stay hidden where chat stays private. Told apart by the event's own values, never by the name shown: the channel id (arg7, zoneChannelID, never secret) in `PUBLIC_IDS`, else, when the id is 0 or missing, the base name (arg9) in `PUBLIC_NAMES`. Ids from the game's ChatChannels table (wago.tools, 2026-10-11): `wow_classic_beta` (Forever's client folder): General 1, Trade 2, LocalDefense 22, LookingForGroup 26, Newcomer Chat 32, Trade (Services) 42, HardcoreDeaths 44, Trade (Local) 46; Classic Era: LookingForGroup 24, GuildRecruitment 25, Services 45. Public: 1, 2, 24, 26, 42, 45, 46. Custom channels (id 0, a name of their own), LocalDefense, Newcomer Chat and every other channel stay private. Channel names still follow `channels`; nothing changes with chatNames off | publicChannels (off by default; only with chatNames) |
 | Loot and roll lines (CHAT_MSG_LOOT) | the same, templates for LOOT_ITEM, LOOT_ROLL_*, CREATED_ITEM | loot (Windows' row) |
-| Whispers, Battle.net whispers, AFK/DND replies | dropped by the filter; locked ones (dungeons) taken out by the OnEvent hook | whispers |
+| Whispers, Battle.net whispers, AFK/DND replies | dropped by the filter; locked ones (dungeons) taken out by the OnEvent hook. Whispers and Battle.net whispers you get go into the whisper inbox (Inbox.lua) with whisperInbox ticked | whispers |
 | Battle.net "came online/offline", removed, broadcast lines | dropped (the game builds the name from the account itself, so it can't be swapped); the window's preview shows the line gone | chatNames or bnToasts |
 | Guild message of the day (printed straight into chat by ChatFrameUtil.DisplayGMOTD, no chat event, no filter) | the OnEvent hook after GUILD_MOTD / UPDATE_CHAT_WINDOWS, and at turn-on: `TransformMessages` makes it "Guild Message of the Day: (hidden)". One way | news (Social's row) |
 | Channel names, "Changed Channel" notice, /chatlist, join/leave notices | arg4 "1. General - Zone" to "1. General" (the number must stay: the game needs it). LocalDefense lines are dropped (they say where you are) | channels |
 | Dungeons, raids, battlegrounds | the game makes those lines secret and skips addon filters. `HookScript("OnEvent")` on each chat frame: after an event with a secret value, `TransformMessages` swaps every secret line in that frame (the whole line, older ones too: the game can't say which is new) for "[Party] (hidden)" (Hide names) or `RemoveMessagesByPredicate` takes them out (Hide chat). Only `issecretvalue` is asked of them. One way, and never while `P:ShotOnly()` | instChat |
 | Lines already in chat | when private turns on (or the tick goes on while private): names, links and channel zones cleaned, locked lines hidden (instChat), old whispers taken out (with Hide whispers). With publicChannels ticked, a public channel's old line is cleaned as a new one is (only your name, the zone still stripped), told apart by the event and its values the game keeps with a player's line (`GetMessageInfo`'s 8th and 9th: `event`, `eventArgs`, a `SafePack` of the event's own values, only read; checked in Forever's ChatFrameOverrides). Join and /chatlist lines are added bare (no event, no values), so an old one in a public channel is cleaned in full (its channel is only known by the translated name shown). One way; nothing of this happens without the tick | cleanOld |
-| Edit box header ("Tell Name:", your name on /e, "[1. General - Zone]:") | `hooksecurefunc(header, "SetFormattedText")` on each ChatFrameNEditBoxHeader: our text is in before UpdateHeader measures it. The text is worked out from the box's GetChatType / GetTellTarget / GetChannelTarget, never from the header | chatNames, channels |
+| Edit box header ("Tell Name:", your name on /e, "[1. General - Zone]:") | `hooksecurefunc(header, "SetFormattedText")` on each ChatFrameNEditBoxHeader: our text is in before UpdateHeader measures it. The text is worked out from the box's GetChatType / GetTellTarget / GetChannelTarget, never from the header. Who you whisper (1.1.0, see below): "Tell Mage: ", "Tell Player: ", "Tell Friend: " for a Battle.net whisper, "Tell: " under Hidden | whispers or chatNames (who you whisper), chatNames (/e), channels |
 | Whisper tabs, minimised buttons, dock overflow list | post-hooks on FCF_SetWindowName, FCF_CreateMinimizedFrame, FCFDockOverflowListButton_SetValue; FCF_OpenTemporaryWindow hooks new windows (with any of instChat, whispers, chatNames, channels) and, a frame later, takes locked lines out of whisper windows (the game resends the whisper into the new window through GetScript, which may skip hooks) | whispers, else chatNames |
 | Timestamps | `P:SetCVar` showTimestamps "none" | timestamps |
 | Bubbles | `P:SetCVar` chatBubbles, chatBubblesParty, chatBubblesRaid "0" (Raid skipped if missing) | bubbles |
@@ -531,9 +741,39 @@ lines, joins and /chatlist are added bare), edit box headers, whisper windows; n
 - publicChannels changing while private: new lines follow it at once (the filters read it each time); lines
   already printed stay as they were, as with every other chat setting. Locked channel lines (an encounter in
   the open world) are instChat's as ever. The Chat page lists it right under "Swap names in chat": the two
-  columns fill row by row, so the rows are in the order chatNames, whispers, publicChannels, cleanOld, then
-  the instChat choice on its own row (moved below them on 2026-10-11 so the new tick could sit under
-  chatNames). The preview's General line follows it (the sample sender's real name, the zone still gone).
+  columns fill row by row, so the rows are in the order chatNames, whispers, publicChannels, whisperInbox (under
+  Hide whispers, 1.1.0), cleanOld, the inbox's "Open the whisper inbox" button (a row with `run`, no key: under the
+  inbox tick, beside cleanOld), then the instChat choice on its own row (moved below them on 2026-10-11 so the new tick
+  could sit under chatNames). The preview's General line follows it (the sample sender's real name, the zone still gone).
+- Who you whisper in the edit box header (1.1.0, the user's "To Name:" ask; Forever's header is "Tell %s: " for both
+  CHAT_WHISPER_SEND and CHAT_BN_WHISPER_SEND, wago GlobalStrings 1.60.1.70374; "To %s: " is the line printed after you
+  send, CHAT_WHISPER_INFORM_GET, which the sender filter already labels and Hide whispers drops). Forever's
+  `ChatFrameEditBoxMixin:UpdateHeader` (Blizzard_ChatFrameBase/Shared/ChatFrameEditBox.lua): `header:SetWidth(0)`,
+  `SetFormattedText(CHAT_WHISPER_SEND, tellTarget)`, measures it (longer than half the box: cut to that, HeaderSuffix "..."
+  shown), then `SetTextInsets(15 + header:GetWidth() + suffix + language, 13, 0, 0)`.
+  - Ticks: `WhisperKey()` is whispers if ticked, else chatNames (the same rule whisper tabs already had; `TabKey` is now that
+    function). Hide whispers keeps the whole conversation private, so the tab and the header both stay swapped with it alone.
+    /e stays chatNames only, channel headers channels only.
+  - Label: their class when the addon knows it (`ClassFor`: noted, or in your group by name), else "Player"; you: your
+    label; a Battle.net whisper "Friend" (as Social's account label; never read: the target is the account's |K name);
+    Hidden: blank, the space before it dropped too ("Tell: "). Plain, so the header keeps the whisper colour. A name typed in
+    another case than the game's ("/w brannoc") isn't found, so it shows "Player".
+  - Typed text kept clear of the header: inside UpdateHeader the game measures our text itself. When ours goes in or comes off
+    outside it (private mode, a tick or the name style changing with the box open), `FitBox` sets the box's text insets the
+    game's way (15 + the header's width + the shown suffix's + the language tag's; right, top and bottom read and kept), only
+    while the box and header show, never with a secret, and only when the left inset really changes. Restores: the header's
+    `P:OnRestore` (filed under the same key, run after the core puts the game's text back). `SetTextInsets` is the only call on
+    the box itself (the harness allows it on what isn't protected, as SetWidth); its text, tell target, chat type and
+    attributes are only read.
+  - Known costs: the letters typed after /w (and the names the game suggests, which it also fills into the box) show until the
+    header switches (the user accepted this, 2026-10-11: the box's text is security-sensitive, and the mail To box stays
+    readable too); Good to know says so, with how to skip typing (click their name in chat, or Whisper on a right-click menu:
+    both reach the header with no typed name). A header the game cut short (a name over half the box) keeps the game's cut
+    width with our label in it until the game's next update, and a long real name put back shows in full, the typed text past
+    it, until the game cuts it again: cosmetic only.
+  - The preview: the chat card's foot is the chat box, "Tell Brannoc Stonehelm: on my way" in the whisper pink, swapped with
+    either tick ("Tell: " under Hidden). The card grew 4 (140 to 144; the line above the box at 26 from its foot) so every
+    chat line still has room for two rows; where you are still sits 8 below it.
 - A /wave (TEXT_EMOTE): the sender's own name is left in the text, since the game swaps it for their link.
 - Template captures are never noted with `P:Learn` (a wrong match would teach a word as a name); player
   links and senders are.
@@ -545,7 +785,8 @@ lines, joins and /chatlist are added bare), edit box headers, whisper windows; n
   the Chat Channels window (check first whether Forever shows zones there); centre-screen raid warnings.
 - Known costs: lines that are cleaned or hidden don't come back after private mode turns off (the big
   button's note, instChat's description and Good to know say so); a transformed line's fade timer restarts,
-  so a faded line can show again for a moment; a hidden whisper doesn't set the reply target (R); with Hide
+  so a faded line can show again for a moment; a hidden whisper doesn't set the reply target (R: the whisper inbox
+  can answer it instead); with Hide
   whispers, a whisper still opens its own (empty) tab when whispers pop out (FloatingChatFrameManager opens
   it before any filter; the whispers description says so).
 - "For screenshots": nothing one-way happens during the shot (old lines, locked lines and the message of
@@ -557,6 +798,11 @@ Needs an in-game check:
   names, vanish with Hide chat, stay with Leave as is. No taint or Lua errors from the OnEvent hook.
 - The edit box: /w, /e and /1 show the swapped header with no big gap, and slash commands and macros typed in
   chat still work afterwards (the edit box is security-sensitive).
+- Who you whisper (1.1.0): "Tell Mage:" after /w and a name, R, a click on a name in chat, Whisper on a right-click menu and a
+  Battle.net friend ("Tell Friend:"); with only Hide whispers ticked too. Private mode turned on and off with a whisper open:
+  the typed text moves up to the label and back past the real name at once, never under the header. The whisper still goes to
+  the right person, Tab still cycles who you whisper, no Lua errors or blocked actions with `/console taintLog 0`, in and out
+  of combat.
 - Channel names arrive as "1. General - Elwynn Forest" on Forever, and LocalDefense is named "LocalDefense".
 - Seen in game 2026-10-11: Forever's channel BASE name (the event's 9th value) carries the zone too ("General - Darkshore"),
   and General's channel id was not 1, so the first public-channels build never matched and General names stayed swapped.
@@ -599,10 +845,10 @@ How it changes things:
 | --- | --- | --- |
 | friends | WoW friends (class + level, zone hidden), Battle.net friends ("Friend (Mage)"), friend requests, your BattleTag (your made-up BattleTag, else your typed name, else "Battle.net"; worked out from the game's own text, so a blank Hidden label is labelled again when the style changes), your broadcast box (stars), the friends hover box (name, character line, zone, note, broadcast). The newer social window (below): your BattleTag in its header (its copy button out of reach), friend and request cards, the broadcast box. Quick Join and Recruit-A-Friend in both windows | `FriendsFrame_UpdateFriendButton`, `_UpdateFriendInviteButton`, `_CheckBattlenetStatus`, `FriendsFrameTooltip_SetLine` (its own frame, not the game's tooltip); the newer window's hooks below |
 | bnToasts | Came online / offline / broadcast pop-ups say "A friend"; the late character line hidden. The same pop-up serves both windows (`BNToastFrame` inherits Blizzard_SocialToast's template, whose other users name nobody) | `BNToastFrame` ShowToast, its MiddleLine's SetFormattedText |
-| whoList | /who rows (covered; your own row's zone and guild hidden), ignore and block list, recent players; the newer window's ignore list and recent allies | mixins above, `IgnoreList_InitButton`; the newer window's hooks below |
+| whoList | /who rows (covered; your own row's zone and guild hidden, or with guildName ticked your made-up guild laid over the guild column), ignore and block list, recent players; the newer window's ignore list and recent allies | mixins above, `IgnoreList_InitButton`; the newer window's hooks below |
 | roster | Roster names (you: your label), notes, your zone; details panel name, both notes, your zone; guild event log hidden | mixins above, `CommunitiesFrame.GuildMemberDetailFrame` DisplayMember |
 | news | News rows ("Warrior obtained [item]"), the news feed's MOTD row, the Info tab's MOTD and guild info (hidden) | `GuildNewsButton_SetNews`, `GuildNewsButton_SetMOTD` |
-| guildName | Guild and community list ("Guild" / "Community"), the inspect window's guild tab | `CommunitiesListEntryMixin.Init`, `InspectGuildFrame_Update` |
+| guildName | Guild and community list ("Guild" / "Community"; your own guild, the club marked `isClub`, shows your made-up guild if typed), the inspect window's guild tab (always someone else's: "Guild") | `CommunitiesListEntryMixin.Init`, `InspectGuildFrame_Update` |
 | mail | Inbox senders (player mail only) and names in subjects, the open letter (sender covered, names in the body, invoice buyer), the To box's suggestions (the To box itself stays readable: the user needs to see the name typed, 2026-10-11) | `InboxFrame` Update, `OpenMailFrame` Update, `AutoComplete_UpdateResults` (only when the To box owns it) |
 | groupFinder | Listing leaders, the hover box (leader, members by their colour, comment), listing comments | `LFGBrowseSearchEntry_Update`, `LFGBrowseSearchEntryTooltip_UpdateAndShow`, `LFGBrowseGroupDataDisplayComment_Update` |
 | calendar | Invite lists, "Created by" in the view and edit windows | `CalendarEventInviteList_InitButtonShared`, `CalendarViewEventFrame_Update`, `CalendarCreateEventFrame_Update` |
@@ -745,7 +991,7 @@ Test: `Tools/TestWorld.lua` (only Names and World run in it; Blizzard's side is 
 | Setting | What it does | How |
 | --- | --- | --- |
 | questText | Your name (first, or "First Surname") in quest text, the progress and greeting pages, the NPC portrait text, gossip and gossip options becomes your typed name, else "adventurer" ("Adventurer" to start a sentence). Only your name: a guildmate called "Light" doesn't change "the Light". Boss emotes and raid warnings in the middle of the screen get every known name swapped as chat does (`P:ReplaceNames`, coloured). | Setup: `QuestInfo_Display`, `QuestFrame_UpdatePortraitText`, `HookScript("OnShow")` on QuestFrameProgressPanel and QuestFrameGreetingPanel, `hooksecurefunc(RaidWarningFrame, "AddMessage")`. At load: `GossipGreetingTextMixin.Setup` and `GossipOptionButtonMixin.Setup` (rows copy the mixin when the gossip window first builds them, maybe before private mode is on). Apply also swaps an open gossip window through `ScrollBox:GetFrames()`. |
-| tooltips | Unit tooltips: the name line (title and all) becomes the label in its colour; the type-None lines right under a player's or pet's name (the guild line) go blank; "Name's Pet" owner lines and any known name in other lines (party quest progress) are swapped. Corpse tooltips ("Corpse of Name"; a secret name line becomes "Corpse"). Minimap dot hovers (known names). Hovering a player notes their name (`P:Learn`). World map and zone map group dots are left alone: their hover is built outside the post-calls (a hook on each pin plus `GetOwner` on the game's tooltip), so they're on Good to know instead. | TooltipDataProcessor post-calls (Unit, Corpse, MinimapMouseover), registered once at load; lines set with `P:SetTransient` (nothing recorded: the lines are reused by every later tooltip). |
+| tooltips | Unit tooltips: the name line (title and all) becomes the label in its colour; the type-None lines right under a player's or pet's name (the guild line) go blank (on your own tooltip, while you're in a guild and guildName is ticked, the first becomes your made-up guild, `<Guild>`, in the line's own colour); "Name's Pet" owner lines and any known name in other lines (party quest progress) are swapped. Corpse tooltips ("Corpse of Name"; a secret name line becomes "Corpse"). Minimap dot hovers (known names). Hovering a player notes their name (`P:Learn`). World map and zone map group dots are left alone: their hover is built outside the post-calls (a hook on each pin plus `GetOwner` on the game's tooltip), so they're on Good to know instead. | TooltipDataProcessor post-calls (Unit, Corpse, MinimapMouseover), registered once at load; lines set with `P:SetTransient` (nothing recorded: the lines are reused by every later tooltip). |
 | craftedBy | "<Made by Name>" on every item tooltip (chat links and comparison tooltips too) becomes "<Made by label>", or a blank line when names are hidden. | Item post-call, matching the game's `ITEM_CREATED_BY`. |
 | zoneText | The zone name above the minimap is blank; a frame of our own covers its button so the hover (zone, subzone, faction) can't show. | `Minimap_Update` hook. The cover also takes the click that opens the map (M still works). |
 | coords | The minimap and world map coordinates. | CVars minimapShowPlayerCoords, worldMapShowPlayerCoords, worldMapShowCursorCoords. |

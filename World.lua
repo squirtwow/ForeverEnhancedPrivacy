@@ -6,10 +6,11 @@
 --   of the screen get names swapped as chat does (open world: the game
 --   locks raid warning text in dungeons and raids).
 -- tooltips: player tooltips (the name line, title included, and the guild
---   line under it), pet owner lines, other names in unit tooltips, corpse
---   tooltips, and the names on the minimap's group dots. The world map's
---   group dots build their hover outside the tooltip post-calls, so they're
---   left alone (the Good to know page says so).
+--   line under it: blank, or on your own tooltip your made-up guild while
+--   "Your guild's name" is ticked), pet owner lines, other names in unit
+--   tooltips, corpse tooltips, and the names on the minimap's group dots.
+--   The world map's group dots build their hover outside the tooltip
+--   post-calls, so they're left alone (the Good to know page says so).
 -- craftedBy: "<Made by Name>" on every item tooltip, chat links included.
 -- Tooltip lines change only inside TooltipDataProcessor post-calls,
 -- registered once at load, and nothing is kept to put back: the game writes
@@ -384,11 +385,43 @@ local function UnitLabel(data, line)
     return P:NameFor("mouseover")
 end
 
+-- Whether the game plainly says so (never a secret).
+local function Yes(fn, ...)
+    if type(fn) ~= "function" then return false end
+    local ok, answer = pcall(fn, ...)
+    return ok and not IsSecret(answer) and answer == true
+end
+
+-- Whether a unit tooltip is yours (hovering yourself), found the way its
+-- name line is: by token, else by GUID, else the unit under the mouse.
+local function IsMine(data, line)
+    local token = line.unitToken
+    if not IsSecret(token) and type(token) == "string" then
+        return token == "player" or Yes(UnitIsUnit, token, "player")
+    end
+    local guid = Text(data.guid)
+    if guid then
+        local ok, mine = pcall(UnitGUID, "player")
+        return ok and Text(mine) == guid
+    end
+    return Yes(UnitIsUnit, "mouseover", "player")
+end
+
+-- What your own guild line becomes: your made-up guild (with "Your guild's
+-- name" ticked), else nil, which blanks it. Only while you're in a guild,
+-- so the line under your name really is the guild's.
+local function MyGuildLine(data, line)
+    local guild = P:MyGuild()
+    if not guild or not Yes(IsInGuild) or not IsMine(data, line) then return nil end
+    return P:GuildLine(guild)
+end
+
 -- A unit's tooltip: the name line (with any title), the guild line under a
--- player's or pet's name, an owner line, and any other names.
+-- player's or pet's name (yours can show your made-up guild), an owner
+-- line, and any other names.
 local function OnUnitTip(tooltip, data)
     if type(data) ~= "table" or type(data.lines) ~= "table" then return end
-    local named, underName = false, false
+    local named, underName, guild = false, false, nil
     for _, line in ipairs(data.lines) do
         if type(line) == "table" then
             local kind = line.type
@@ -398,9 +431,12 @@ local function OnUnitTip(tooltip, data)
                 if label then
                     SwapLine(tooltip, line, label, r, g, b)
                     underName = true
+                    guild = MyGuildLine(data, line)
                 end
             elseif underName and kind == LINE.None then
-                SwapLine(tooltip, line, "")
+                -- In the line's own colour (the Name colour plays no part).
+                SwapLine(tooltip, line, guild or "")
+                guild = nil
             else
                 underName = false
                 SwapNamesIn(tooltip, line)

@@ -1,25 +1,31 @@
 -- The /privacy window: pages down the left, the page on the right and a
 -- footer that explains whatever is under the mouse. The Overview has the
 -- big private mode button, how it turns on, how names look, your own name,
--- a made-up BattleTag, their colour, the eye and the minimap button, and a
--- live preview of sample names. Every other page is drawn from Core.lua's
--- rows, so the modules never touch the window. The Overview's bottom right
--- has Reset all settings, which asks first, inside the window.
+-- a made-up BattleTag and guild, the name colour, the eye and the minimap
+-- button, the be right back screen's message (and a button to show it), and
+-- a live preview of sample names (and your own tooltip, and the be right back
+-- screen in small). Every other page is drawn from Core.lua's rows, so the
+-- modules never touch the window. The Overview's bottom right has Reset all
+-- settings, which asks first, inside the window.
 local _, P = ...
 
 local T = P.Theme
 local C = T.C
 
-local WIDTH, HEIGHT, NAV, FOOTER = 900, 580, 200, 46
+-- 124 taller than 1.0.0's: 62 for "Your guild becomes" and 62 for the be
+-- right back screen's message (a heading and a box each).
+local WIDTH, HEIGHT, NAV, FOOTER = 900, 704, 200, 46
 local PAGE_W, PAGE_H = WIDTH - NAV - 2, HEIGHT - FOOTER - 5
 local PAD, BODY_TOP = 24, 82
 local INNER = PAGE_W - PAD * 2
 local GAP, ROW_H, ROW_GAP = 10, 30, 4
 local COLUMN = math.floor((INNER - GAP) / 2)
 local LEFT_W = 350
-local LEFT_H = 438 -- the Overview's left column, down to the key note; ends 9 above the footer
+local LEFT_H = 562 -- the Overview's left column, down to the key note; ends 9 above the footer
 local PREVIEW_X = PAD + LEFT_W + 22
-local PREVIEW_W, PREVIEW_H = PAGE_W - PREVIEW_X - PAD, 354
+local PREVIEW_W, PREVIEW_H = PAGE_W - PREVIEW_X - PAD, 478
+-- How long the preview's be right back card says you've been away.
+local SAMPLE_AWAY = 180
 
 P.WINDOW_SIZE = { WIDTH, HEIGHT }
 
@@ -212,9 +218,9 @@ local function BuildChoices(window, left)
     window.styles = styles
 end
 
--- The typed settings: your name, then the made-up BattleTag under it. Each
--- saves (tidied by the core) when its box loses focus or Enter is pressed;
--- Escape puts the saved one back.
+-- The typed settings: your name, then the made-up BattleTag and guild under
+-- it. Each saves (tidied by the core) when its box loses focus, Enter is
+-- pressed or Escape is: Escape closes windows too, so it keeps what you typed.
 local TEXT_BOXES = {
     { key = "myName", field = "nameBox", title = "Your name becomes", y = 172, most = P.NAME_MAX,
         placeholder = "Leave empty to use the setting above",
@@ -223,19 +229,20 @@ local TEXT_BOXES = {
     { key = "myTag", field = "tagBox", title = "Your BattleTag becomes", y = 234, most = P.TAG_MAX,
         placeholder = "Leave empty to use your name above",
         help = "A made-up BattleTag shown instead of yours in the friends windows. Empty: your name above, or \"Battle.net\"." },
+    { key = "myGuild", field = "guildBox", title = "Your guild becomes", y = 296, most = P.GUILD_MAX,
+        placeholder = "Leave empty to keep it hidden",
+        help = "A made-up guild shown instead of yours while \"Your guild's name\" is ticked: your own tooltip, the guild window "
+            .. "and /who. Empty: it stays hidden." },
 }
 
 local function BuildTextBox(window, left, setting)
     Heading(left, setting.title, setting.y)
-    local box = T:Input(left, LEFT_W, setting.placeholder)
+    local box = T:Input(left, setting.width or LEFT_W, setting.placeholder)
     box:SetPoint("TOPLEFT", 0, -(setting.y + 18))
     box:SetMaxLetters(setting.most)
     box.key = setting.key
     box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    box:SetScript("OnEscapePressed", function(self)
-        self:SetText(P:Get(setting.key))
-        self:ClearFocus()
-    end)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     box:SetScript("OnEditFocusLost", function(self)
         P:Set(setting.key, self:GetText() or "")
         self:SetText(P:Get(setting.key))
@@ -247,20 +254,20 @@ local function BuildTextBox(window, left, setting)
 end
 
 local function BuildColours(window, left)
-    Heading(left, "Name colour", 296)
+    Heading(left, "Name colour", 358)
     local colours = T:Options(left, P.COLOURS, function(key) P:Set("myColour", key) end)
-    colours:SetPoint("TOPLEFT", 0, -314)
+    colours:SetPoint("TOPLEFT", 0, -376)
     for _, button in ipairs(colours.order) do
         window:Hint(button, "Name colour: " .. button.label:GetText(), P.COLOUR_HELP)
     end
     window.colours = colours
 end
 
--- The eye and the minimap button, side by side: the column has no room for
--- another row above the key note. Each tick is as wide as its box and label
--- need, and the room left over is shared between them.
+-- The eye and the minimap button, side by side in one row (the be right back
+-- screen's box and the key note sit below). Each tick is as wide as its box
+-- and label need, and the room left over is shared between them.
 local function BuildExtras(window, left)
-    Heading(left, "Extras", 352)
+    Heading(left, "Extras", 414)
     local eye = T:Tick(left, LEFT_W, P.EYE_ROW.label)
     local minimap = T:Tick(left, LEFT_W, P.MINIMAP_ROW.label)
     local eyeNeeds = 32 + (eye.label:GetStringWidth() or 0)
@@ -268,19 +275,38 @@ local function BuildExtras(window, left)
     local spare = math.max(0, LEFT_W - GAP - eyeNeeds - minimapNeeds)
     local eyeW = math.floor(eyeNeeds + spare / 2 + .5)
     eye:SetWidth(eyeW)
-    eye:SetPoint("TOPLEFT", 0, -370)
+    eye:SetPoint("TOPLEFT", 0, -432)
     eye:SetScript("OnClick", function() P:Set("eye", not P:Get("eye")) end)
     window:Hint(eye, P.EYE_ROW.label, P.EYE_ROW.desc)
     window.eyeRow = eye
     minimap:SetWidth(LEFT_W - GAP - eyeW)
-    minimap:SetPoint("TOPLEFT", eyeW + GAP, -370)
+    minimap:SetPoint("TOPLEFT", eyeW + GAP, -432)
     minimap:SetScript("OnClick", function() P:Set("minimap", not P:Get("minimap")) end)
     window:Hint(minimap, P.MINIMAP_ROW.label, P.MINIMAP_ROW.desc)
     window.minimapRow = minimap
+end
+
+-- The be right back screen's message, under the Extras' ticks, with a button
+-- beside it that shows the screen now. Then the key note: private mode's key
+-- and this screen's are both in the game's Key Bindings.
+local BRB_Y = 476
+local function BuildAway(window, left)
+    local show = T:Button(left, "Show")
+    show:SetPoint("TOPLEFT", LEFT_W - show:GetWidth(), -(BRB_Y + 18))
+    BuildTextBox(window, left, { key = P.BRB_ROW.key, field = "brbBox", title = P.BRB_ROW.label, y = BRB_Y, most = P.BRB_MAX,
+        width = LEFT_W - GAP - show:GetWidth(), placeholder = "Leave empty for \"" .. P.BRB_TEXT .. "\"", help = P.BRB_ROW.desc })
+    local box = window.brbBox
+    show:SetScript("OnClick", function()
+        -- A message being typed is saved first, so the screen shows it.
+        if box:HasFocus() then box:ClearFocus() end
+        if P.BeRightBack then P.BeRightBack:Open() end
+    end)
+    window:Hint(show, "Show", "Shows the be right back screen now, so you can see how it looks. Escape closes it.")
+    window.brbShow = show
     local keyNote = T:Text(left, "GameFontHighlightSmall", C.muted)
-    keyNote:SetPoint("TOPLEFT", 0, -412)
+    keyNote:SetPoint("TOPLEFT", 0, -(BRB_Y + 60))
     keyNote:SetWidth(LEFT_W)
-    keyNote:SetText("Set its key in the game's Key Bindings, under AddOns.")
+    keyNote:SetText("Set both keys in the game's Key Bindings, under AddOns.")
     window.keyNote = keyNote
 end
 
@@ -296,6 +322,9 @@ local CHAT = {
 -- A friend coming online, as chat shows it. Chat can't rename them (the game
 -- builds the line from their account), so private mode leaves the line out.
 local TOAST = { real = "Beatrix (Bea#2231)", text = " has come online.", colour = "00ccff" }
+-- The chat box as you whisper the sample target: "Tell Name: " and what
+-- you've typed, all in the whisper colour, as the game shows it.
+local WHISPERING = { header = "Tell %s: ", blank = "Tell: ", text = "on my way", colour = "ff80ff" }
 
 local function Card(parent, width, height, fill, edge)
     local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -320,6 +349,32 @@ local function BuildPreviewTarget(view, panel)
     mana:SetSize(PREVIEW_W - 24 - 64, 5)
 end
 
+-- The be right back screen in small, at the preview's foot: its accent line,
+-- the eye, your message and how long you've been away.
+local function BuildPreviewAway(view, panel)
+    local card = Card(panel, PREVIEW_W - 24, 54, C.window, C.cardEdge)
+    card:SetPoint("TOPLEFT", 12, -412)
+    local line = T:Block(card, T.ACCENT, "ARTWORK")
+    line:SetPoint("TOPLEFT", 1, -1)
+    line:SetPoint("TOPRIGHT", -1, -1)
+    line:SetHeight(2)
+    local eye = card:CreateTexture(nil, "ARTWORK")
+    eye:SetSize(16, 10)
+    eye:SetPoint("TOP", 0, -8)
+    eye:SetTexture(P.MEDIA .. "Eye.tga")
+    eye:SetTexCoord(0, 1, 12 / 64, 52 / 64)
+    eye:SetVertexColor(P.ACCENT[1], P.ACCENT[2], P.ACCENT[3])
+    view.brbText = T:Text(card, "GameFontHighlight")
+    view.brbText:SetPoint("TOP", 0, -21)
+    view.brbText:SetWidth(PREVIEW_W - 24 - 20)
+    view.brbText:SetJustifyH("CENTER")
+    view.brbText:SetWordWrap(false)
+    view.brbAway = T:Text(card, "GameFontHighlightSmall", C.muted)
+    view.brbAway:SetPoint("TOP", 0, -37)
+    view.brbAway:SetJustifyH("CENTER")
+    view.brb = card
+end
+
 local function BuildPreviewLists(view, panel)
     view.party = {}
     for i = 1, 3 do
@@ -332,9 +387,21 @@ local function BuildPreviewLists(view, panel)
         view.party[i] = T:Text(row, "GameFontHighlightSmall")
         view.party[i]:SetPoint("LEFT", 10, 0)
     end
-    -- Room for every chat line to wrap onto a second row.
-    local chat = Card(panel, PREVIEW_W - 24, 140, C.panel, C.rowEdge)
-    chat:SetPoint("TOPLEFT", 12, -178)
+    -- Your own tooltip, as hovering yourself shows it: your name, and your
+    -- guild's line under it.
+    local tip = Card(panel, PREVIEW_W - 24, 52, C.card, C.cardEdge)
+    tip:SetPoint("TOPLEFT", 12, -178)
+    view.tipName = T:Text(tip, "GameFontNormal")
+    view.tipName:SetPoint("TOPLEFT", 10, -10)
+    view.tipName:SetWidth(PREVIEW_W - 24 - 20)
+    view.tipGuild = T:Text(tip, "GameFontHighlightSmall")
+    view.tipGuild:SetPoint("TOPLEFT", 10, -30)
+    view.tipGuild:SetWidth(PREVIEW_W - 24 - 20)
+    view.tip = tip
+    -- Room for every chat line to wrap onto a second row, and the chat box
+    -- under them (4 taller for it, still 8 above where you are).
+    local chat = Card(panel, PREVIEW_W - 24, 144, C.panel, C.rowEdge)
+    chat:SetPoint("TOPLEFT", 12, -240)
     view.chat = {}
     for i = 1, 4 do
         local line = T:Text(chat, "GameFontHighlightSmall")
@@ -347,11 +414,21 @@ local function BuildPreviewLists(view, panel)
         line:SetWordWrap(true)
         view.chat[i] = line
     end
+    -- The chat box at the card's foot, a line above it, as you type a whisper.
+    local rule = T:Block(chat, C.rowEdge, "ARTWORK")
+    rule:SetPoint("BOTTOMLEFT", 1, 26)
+    rule:SetPoint("BOTTOMRIGHT", -1, 26)
+    rule:SetHeight(1)
+    view.box = T:Text(chat, "GameFontHighlightSmall")
+    view.box:SetPoint("BOTTOMLEFT", 8, 8)
+    view.box:SetWidth(PREVIEW_W - 40)
+    view.box:SetWordWrap(false)
     view.zone = T:Text(panel, "GameFontHighlightSmall", C.zone)
-    view.zone:SetPoint("TOPLEFT", 14, -330)
+    view.zone:SetPoint("TOPLEFT", 14, -392)
     view.coords = T:Text(panel, "GameFontHighlightSmall", C.muted)
-    view.coords:SetPoint("TOPRIGHT", -14, -330)
+    view.coords:SetPoint("TOPRIGHT", -14, -392)
     view.coords:SetJustifyH("RIGHT")
+    BuildPreviewAway(view, panel)
 end
 
 local function BuildPreview(window, page)
@@ -383,6 +460,7 @@ local function BuildOverview(window, page)
     for _, setting in ipairs(TEXT_BOXES) do BuildTextBox(window, left, setting) end
     BuildColours(window, left)
     BuildExtras(window, left)
+    BuildAway(window, left)
     BuildPreview(window, page)
 end
 
@@ -422,6 +500,27 @@ local function ChatLine(line, myName, myClass)
     return T:Paint(channel, chColour) .. who .. T:Paint(": " .. line.text, chColour)
 end
 
+-- Your guild's line in the sample tooltip: your guild as it is (none while
+-- you're in none, as the game's tooltip has no line then), blank while
+-- private mode hides it, or your made-up guild in the line's own colour.
+local function GuildSample()
+    local ok, guild = pcall(GetGuildInfo, "player")
+    if not ok or P.IsSecret(guild) or type(guild) ~= "string" or guild == "" then return "" end
+    if not P:IsOn("tooltips") then return P:GuildLine(guild) end
+    local made = P:MyGuild()
+    return made and P:GuildLine(made) or ""
+end
+
+-- The chat box as you whisper the sample target. With Swap names in chat or
+-- Hide whispers on, who you're whispering is their label, as the chat box
+-- shows it ("Tell: " when names are hidden).
+local function BoxLine()
+    local name = TARGET.name
+    if P:IsOn("chatNames") or P:IsOn("whispers") then name = (P:StyleLabel(TARGET.class)) end
+    local header = name == "" and WHISPERING.blank or WHISPERING.header:format(name)
+    return "|cff" .. WHISPERING.colour .. header .. WHISPERING.text .. "|r"
+end
+
 local function RefreshPreview(window)
     local view = window.preview
     local myName, myClass = MySample()
@@ -434,12 +533,20 @@ local function RefreshPreview(window)
         view.party[i]:SetText(name)
         view.party[i]:SetTextColor(colour[1], colour[2], colour[3])
     end
+    name, colour = Shown(myName, myClass, "tooltips", true)
+    view.tipName:SetText(name)
+    view.tipName:SetTextColor(colour[1], colour[2], colour[3])
+    view.tipGuild:SetText(GuildSample())
     for i, line in ipairs(CHAT) do view.chat[i]:SetText(ChatLine(line, myName, myClass)) end
     local dropped = P:IsOn("chatNames") or P:IsOn("bnToasts")
     view.chat[4]:SetText(dropped and "" or ("|cff" .. TOAST.colour .. TOAST.real .. TOAST.text .. "|r"))
+    view.box:SetText(BoxLine())
     view.zone:SetText(P:IsOn("zoneText") and "" or "Stormwind City")
     view.coords:SetText(P:IsOn("coords") and "" or "48.2, 61.7")
     view.eye:SetShown(P:Private() and P:Get("eye") == true)
+    -- The be right back screen, private mode on or off, as it always is.
+    view.brbText:SetText(P:BrbText())
+    view.brbAway:SetText(P.BeRightBack and P.BeRightBack:Away(SAMPLE_AWAY) or "")
 end
 
 local function RefreshOverview(window)
@@ -468,6 +575,15 @@ local function TickControl(window, content, row, x, y)
     return tick
 end
 
+-- A button row (no setting): a tick's place and size, the window's button look.
+local function RunControl(window, content, row, x, y)
+    local button = T:Button(content, row.label)
+    button:SetWidth(COLUMN)
+    button:SetPoint("TOPLEFT", x, -y)
+    button:SetScript("OnClick", function() row.run() end)
+    return button
+end
+
 local function ChoiceControl(window, content, row, y)
     local choice = T:Choice(content, INNER, row.label, row.options, function(key) P:Set(row.key, key) end)
     choice:SetPoint("TOPLEFT", 0, -y)
@@ -493,11 +609,12 @@ local function BuildList(window, page, sections)
                 control = ChoiceControl(window, content, row, y)
                 y = y + 34 + ROW_GAP
             else
-                control = TickControl(window, content, row, column * (COLUMN + GAP), y)
+                local Make = row.run and RunControl or TickControl
+                control = Make(window, content, row, column * (COLUMN + GAP), y)
                 if column == 1 then y, column = y + ROW_H + ROW_GAP, 0 else column = 1 end
             end
             window:Hint(control, row.label, row.desc .. (row.tag and (" (" .. row.tag .. ")") or ""))
-            window.controls[row.key] = control
+            if row.key then window.controls[row.key] = control else window.buttons[row.id] = control end
         end
         if column == 1 then y = y + ROW_H + ROW_GAP end
         y = y + 14
@@ -513,8 +630,8 @@ end
 -- button's right end was. Reset ignores clicks for a moment after it shows,
 -- so a double click on the button can't reset. Cancel, another page or
 -- closing the window puts the button back.
-local RESET_HELP = "Every option goes back to how it started, your name and BattleTag boxes are emptied, and private mode "
-    .. "turns off. Your key binding stays."
+local RESET_HELP = "Every option goes back to how it started, every box on the Overview is emptied, and private mode turns off. "
+    .. "Your key bindings and kept whispers stay."
 local RESET_WAIT = .5 -- seconds Reset ignores clicks after the question shows
 
 local function BuildReset(window, page)
@@ -622,6 +739,19 @@ local function BuildPage(window, page)
     window.pages[page.key] = frame
 end
 
+-- At the largest UI scales the screen is smaller than the window (Forever's
+-- slider goes to 115%: 768 / 1.15 is about 668 high, and a 4:3 screen about
+-- 890 across), so then it shrinks to fit, EDGE clear of each side. Checked
+-- each time it opens.
+local EDGE = 8
+local function Fit(window)
+    local wide, high = UIParent:GetWidth(), UIParent:GetHeight()
+    local scale = 1
+    if type(wide) == "number" and wide > 0 then scale = math.min(scale, (wide - EDGE * 2) / WIDTH) end
+    if type(high) == "number" and high > 0 then scale = math.min(scale, (high - EDGE * 2) / HEIGHT) end
+    window:SetScale(math.max(.5, scale)) -- never nothing, whatever the game says
+end
+
 local function BuildFrame()
     local window = CreateFrame("Frame", "ForeverEnhancedPrivacyFrame", UIParent, "BackdropTemplate")
     window:SetSize(WIDTH, HEIGHT)
@@ -648,7 +778,7 @@ end
 
 local function Build()
     local window = BuildFrame()
-    window.pages, window.controls = {}, {}
+    window.pages, window.controls, window.buttons = {}, {}, {}
     BuildFooter(window)
     BuildNav(window)
     for _, page in ipairs(P.PAGES) do BuildPage(window, page) end
@@ -684,7 +814,10 @@ local function Build()
         RefreshOverview(self)
         self:ShowNote()
     end
-    window:SetScript("OnShow", function(self) self:Refresh() end)
+    window:SetScript("OnShow", function(self)
+        Fit(self)
+        self:Refresh()
+    end)
     window:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
         if self.reset then self.reset:Ask(false) end

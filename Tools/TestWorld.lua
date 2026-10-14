@@ -1,6 +1,7 @@
 -- World against a mock game (Tools/Harness.lua): your name in quest, gossip
 -- and portrait text, boss emotes and raid warnings, player, pet, corpse,
--- minimap and item tooltips, the world map's group dots and its curtain, the
+-- minimap and item tooltips (your own guild line's made-up guild too), the
+-- world map's group dots and its curtain, the
 -- minimap zone text and its cover, coordinates, zone announcements, the
 -- clock, gold and healer names. Checked: nothing while off, every surface
 -- while on, each tick putting back only its own, new labels when the name
@@ -367,6 +368,59 @@ Equal(TipText(1) .. "|" .. TipText(2) .. "|" .. TipText(3), "Warrior||Level 30 H
 Equal(TipColour(1), "0.78 0.61 0.43", "in the class colour")
 Tip(TT.Unit, { { type = LT.UnitName, leftText = "Zriel Gustbellow", unitToken = "player" }, { type = LT.None, leftText = "<Hearth>" } })
 Equal(TipText(1) .. "|" .. TipText(2), "Druid|", "your own tooltip")
+-- Your guild becomes: your own guild line shows the made-up guild, as the
+-- game writes a guild line, in the line's own colour; nobody else's does.
+do
+    local function Mine(token, data, second)
+        H.Blizzard(function() GameTooltipTextLeft2:SetTextColor(.25, 1, .25) end)
+        Tip(TT.Unit, { { type = LT.UnitName, leftText = "Zriel Gustbellow", unitToken = token }, { type = LT.None, leftText = "<Hearth>" },
+            second or { type = LT.UnitLevel, leftText = "Level 30 Night Elf Druid (Player)" } }, data)
+        return TipText(1) .. "|" .. TipText(2) .. "|" .. TipText(3)
+    end
+    local LEVEL = "Level 30 Night Elf Druid (Player)"
+    P:Set("myGuild", "Lancers of Elwynn")
+    Equal(Mine("player"), "Druid|Lancers of Elwynn|" .. LEVEL, "your tooltip: the made-up guild in your guild's line")
+    Equal(TipColour(2), "0.25 1.00 0.25", "in the colour the game drew the line in")
+    H.units.raid1 = { name = "Zriel", surname = "Gustbellow", class = "Druid", classFile = "DRUID", player = true, guid = "Player-1-0001" }
+    Equal(Mine("raid1"), "Druid|Lancers of Elwynn|" .. LEVEL, "you by any token (your raid frame)")
+    H.units.raid1 = nil
+    Equal(Mine(nil, { guid = "Player-1-0001" }), "Druid|Lancers of Elwynn|" .. LEVEL, "you by GUID")
+    Mine(nil, { guid = H.SECRET })
+    Equal(TipText(2), "", "a GUID the game won't say: the unit under the mouse decides (someone else here), never read")
+    H.units.mouseover = H.units.player
+    Mine(nil, { guid = H.SECRET })
+    Equal(TipText(2), "Lancers of Elwynn", "and when that's you, your made-up guild")
+    H.units.mouseover = { name = "Brannoc", surname = "Stonehelm", class = "Warrior", classFile = "WARRIOR", player = true,
+        guid = "Player-1-0002" }
+    Tip(TT.Unit, { { type = LT.UnitName, leftText = "Brannoc Stonehelm", unitToken = "target" }, { type = LT.None, leftText = "<Iron Vanguard>" } })
+    Equal(TipText(1) .. "|" .. TipText(2), "Warrior|", "someone else's guild line: still blank, never your made-up guild")
+    Tip(TT.Unit, { { type = LT.UnitName, leftText = "Brannoc Stonehelm" }, { type = LT.None, leftText = "<Iron Vanguard>" } },
+        { guid = "Player-1-0002" })
+    Equal(TipText(2), "", "nor theirs by GUID")
+    Tip(TT.Unit, { { type = LT.UnitName, leftText = "Wolfie", unitToken = "pet" }, { type = LT.None, leftText = "<Hearth>" } })
+    Equal(TipText(2), "", "nor your pet's line")
+    Equal(Mine("player", nil, { type = LT.None, leftText = "Second line" }), "Druid|Lancers of Elwynn|",
+        "only the guild line itself: a second line under your name still blank")
+    P:Set("myColour", "accent")
+    Equal(Mine("player") .. " / " .. TipColour(2), "Druid|Lancers of Elwynn|" .. LEVEL .. " / 0.25 1.00 0.25",
+        "the Name colour plays no part")
+    P:Set("myColour", "game")
+    P:Set("nameStyle", "hidden")
+    Equal(Mine("player"), "|Lancers of Elwynn|" .. LEVEL, "the Hidden style: your name blank, the typed guild kept")
+    P:Set("nameStyle", "class")
+    H.guild = nil
+    Equal(Mine("player"), "Druid||" .. LEVEL, "in no guild: the line under your name isn't a guild's, so it's only blanked")
+    H.guild = { { name = "Light Bringer", classFile = "PALADIN" } }
+    P:Set("guildName", false)
+    Equal(Mine("player"), "Druid||" .. LEVEL, "Your guild's name unticked: blank, as before")
+    P:Set("guildName", true)
+    P:Set("tooltips", false)
+    Equal(Mine("player"), "Zriel Gustbellow|<Hearth>|" .. LEVEL, "Player tooltips unticked: your tooltip as the game draws it")
+    P:Set("tooltips", true)
+    P:Set("myGuild", "")
+    Equal(Mine("player"), "Druid||" .. LEVEL, "emptied: blank, as before")
+    Equal(H.Problems(), "", "nothing wrong with your guild line")
+end
 Tip(TT.Unit, { { type = LT.UnitName, leftText = "Marshal Dughan", unitToken = "npc" },
     { type = LT.None, leftText = "<Marshal of Goldshire>" } })
 Equal(TipText(1) .. "|" .. TipText(2), "Marshal Dughan|<Marshal of Goldshire>", "an NPC: left alone")

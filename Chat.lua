@@ -1,5 +1,7 @@
 -- Chat: names and giveaways in chat. Owns chatNames, publicChannels,
--- instChat, whispers, cleanOld, channels, timestamps and bubbles. It also
+-- instChat, whispers, whisperInbox, cleanOld, channels, timestamps and
+-- bubbles (whisperInbox's work is Inbox.lua's: it keeps the whispers this
+-- module hides, so there's nothing for Chat to apply or put back). It also
 -- does the chat side of rows owned elsewhere: loot and roll lines follow the
 -- loot tick, ready check lines follow chatNames, as the readyCheck row says,
 -- the guild message of the day in chat follows the news tick, and Battle.net
@@ -26,8 +28,12 @@
 --   game sends them, new lines and old; your own name is still swapped.
 -- - The edit box header ("Tell Name:", your name on /e, "[1. General -
 --   Zone]:"): a post-hook on each header's SetFormattedText, so the box
---   measures our text. Whisper tabs: post-hooks on the floating chat frame
---   functions that name them.
+--   measures our text. Who you whisper follows chatNames or whispers, as
+--   whisper tabs do. When our text goes in or comes off outside the game's
+--   own update, the box's text insets are set as the game sets them, so the
+--   typed text stays clear of the header. What's typed, the tell target, the
+--   chat type and the box's attributes are never touched. Whisper tabs:
+--   post-hooks on the floating chat frame functions that name them.
 -- - Timestamps and bubbles: CVars, through P:SetCVar.
 local _, P = ...
 
@@ -36,6 +42,7 @@ local M = P:Module("Chat")
 local IsSecret = P.IsSecret
 local HIDDEN = "(hidden)"
 local WHISPER = "Whisper"
+local FRIEND = "Friend" -- a Battle.net friend you whisper, in the edit box header
 local LOCAL_DEFENCE = "LocalDefense" -- the game's channel name
 
 -- Events -------------------------------------------------------------------------------------
@@ -792,8 +799,41 @@ local function CleanFrame(frame)
 end
 
 -- The edit box header ----------------------------------------------------------------------------------
+-- Forever's ChatFrameEditBoxMixin:UpdateHeader sets the header with
+-- SetFormattedText (a whisper and a Battle.net whisper: "Tell %s: ",
+-- CHAT_WHISPER_SEND and CHAT_BN_WHISPER_SEND), measures it, then starts the
+-- typed text past it (SetTextInsets). The hook below puts our text in before
+-- that measuring.
 
 local boxOf = {} -- each header hooked: its edit box (kept here, never on Blizzard's frames)
+local fitOf = {} -- each header: what keeps its box's typed text clear of it, once ours goes in or comes off
+
+-- Who you whisper stays hidden with either tick, as whisper tabs do: Hide
+-- whispers keeps whispers private, Swap names in chat every name.
+local function WhisperKey()
+    if P:IsOn("whispers") then return "whispers" end
+    if P:IsOn("chatNames") then return "chatNames" end
+end
+
+-- Who you're whispering: their class when the addon knows it (noted, or in
+-- your group), else "Player" (you: your label); a Battle.net friend
+-- "Friend"; blank under Hidden. Plain, so the header keeps the whisper colour.
+local function TellLabel(kind, box)
+    if kind == "BN_WHISPER" then
+        if P:Get("nameStyle") == "hidden" then return "" end
+        return FRIEND
+    end
+    local target = Text(Ask(box, "GetTellTarget"))
+    return (target and P:LabelForName(target, ClassFor(target)) or P:StyleLabel(nil))
+end
+
+-- The whisper header with the label in the name's place. A blank label
+-- takes the space before it too, so it reads "Tell: ".
+local function TellHeader(kind, label)
+    local fmt = Text(kind == "WHISPER" and CHAT_WHISPER_SEND or CHAT_BN_WHISPER_SEND) or "Tell %s: "
+    if label ~= "" then return Format(fmt, "Tell %s: ", label) end
+    return Format((fmt:gsub(" ?%%s", "", 1)), "Tell: ")
+end
 
 local function ChannelHeader(box)
     local target = Ask(box, "GetChannelTarget")
@@ -809,10 +849,9 @@ end
 -- What the header should say for the box's chat type, and the key it's under.
 local function HeaderText(box)
     local kind = Ask(box, "GetChatType")
-    if (kind == "WHISPER" or kind == "BN_WHISPER") and P:IsOn("chatNames") then
-        local target = kind == "WHISPER" and Text(Ask(box, "GetTellTarget"))
-        local label = target and P:LabelForName(target) or P:StyleLabel(nil)
-        return Format(kind == "WHISPER" and CHAT_WHISPER_SEND or CHAT_BN_WHISPER_SEND, "Tell %s: ", label), "chatNames"
+    if kind == "WHISPER" or kind == "BN_WHISPER" then
+        local key = WhisperKey()
+        if key then return TellHeader(kind, TellLabel(kind, box)), key end
     elseif kind == "EMOTE" and P:IsOn("chatNames") then
         return Format(CHAT_EMOTE_SEND, "%s ", (P:MyLabel())), "chatNames"
     elseif kind == "CHANNEL" and P:IsOn("channels") then
@@ -820,25 +859,61 @@ local function HeaderText(box)
     end
 end
 
-local function SwapHeader(header)
+-- A number the addon may use, else nil.
+local function Number(value)
+    if IsSecret(value) or type(value) ~= "number" then return nil end
+    return value
+end
+
+-- How wide a region beside the header is while it shows (0 when hidden or
+-- missing), or nil when the game won't say.
+local function ShownWidth(region)
+    if type(region) ~= "table" or not Ask(region, "IsShown") then return 0 end
+    return Number(Ask(region, "GetWidth"))
+end
+
+-- Starts the typed text past the header as the game's UpdateHeader does: 15,
+-- then the header, the "..." after a header it cut short and any language
+-- tag; the box's other insets as they are. Only when our text went in or
+-- came off outside that update (private mode or a setting changing with the
+-- box open): inside it, the game measures our text itself. A cosmetic setter
+-- on the box, nothing else of it touched; skipped while the box or its
+-- header is hidden (the game sets it again when the box opens).
+local function FitBox(box, header)
+    if not (Ask(box, "IsVisible") and Ask(header, "IsShown")) then return end
+    local width = Number(Ask(header, "GetWidth"))
+    local suffix, language = ShownWidth(Named(box, "HeaderSuffix")), ShownWidth(Field(box, "languageHeader"))
+    if not (width and suffix and language) or type(box.GetTextInsets) ~= "function" then return end
+    local ok, left, right, top, bottom = pcall(box.GetTextInsets, box)
+    left, right, top, bottom = Number(left), Number(right), Number(top), Number(bottom)
+    if not (ok and left and right and top and bottom) then return end
+    local wanted = 15 + width + suffix + language
+    if math.abs(wanted - left) >= .5 then box:SetTextInsets(wanted, right, top, bottom) end
+end
+
+-- outside: not from the game's UpdateHeader, so the box is fitted here.
+local function SwapHeader(header, outside)
     local box = boxOf[header]
     if not box then return end
     local text, key = HeaderText(box)
-    if text then P:SwapText(key, header, text) end
+    if not text then return end
+    P:SwapText(key, header, text)
+    -- When ours comes off (the core puts the game's text back first).
+    fitOf[header] = fitOf[header] or P:Guard(M, function() FitBox(box, header) end)
+    P:OnRestore(key, header, fitOf[header])
+    if outside then FitBox(box, header) end
 end
 
 -- Runs inside the game's UpdateHeader, before it measures the header.
 local OnHeader = P:Guard(M, function(header)
-    if not (P:IsOn("chatNames") or P:IsOn("channels")) then return end
+    if not (P:IsOn("chatNames") or P:IsOn("whispers") or P:IsOn("channels")) then return end
     SwapHeader(header)
 end)
 
 -- Whisper windows ----------------------------------------------------------------------------------------
 
-local function TabKey()
-    if P:IsOn("whispers") then return "whispers" end
-    if P:IsOn("chatNames") then return "chatNames" end
-end
+-- The same two ticks as who you whisper in the edit box header.
+local TabKey = WhisperKey
 
 local function IsWhisperWindow(frame)
     local kind = Field(frame, "chatType")
@@ -939,7 +1014,7 @@ local function Relabel(frame)
     RelabelWindow(frame)
     local box = Named(frame, "EditBox")
     local header = box and Named(box, "Header")
-    if header then SwapHeader(header) end
+    if header then SwapHeader(header, true) end
 end
 
 -- CVars -------------------------------------------------------------------------------------------------------

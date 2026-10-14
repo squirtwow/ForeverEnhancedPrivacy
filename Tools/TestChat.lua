@@ -134,11 +134,14 @@ local function Handler(frame, event, ...)
     if bare then frame:AddMessage(Line(event, a), 1, 1, 1, 1) else frame:AddMessage(Line(event, a), 1, 1, 1, 1, 0, 0, event, pack(...)) end
 end
 
--- ChatFrameEditBoxMixin:UpdateHeader, cut down: the game measures the header
--- straight after setting it.
+-- ChatFrameEditBoxMixin:UpdateHeader, cut down: the game sizes the header to
+-- its text, sets it and measures it straight after (a header longer than
+-- half the box is cut to that, with "..." after it), then starts the typed
+-- text past it (Forever's own sums: 15, the header, the "...", and right 13).
 local function UpdateHeader(box)
     local s = S[box]
-    local header = _G[s.name .. "Header"]
+    local header, suffix = _G[s.name .. "Header"], _G[s.name .. "HeaderSuffix"]
+    header:SetWidth(0)
     if s.chatType == "WHISPER" then
         header:SetFormattedText(CHAT_WHISPER_SEND, s.tellTarget)
     elseif s.chatType == "BN_WHISPER" then
@@ -152,6 +155,23 @@ local function UpdateHeader(box)
         header:SetText(_G["CHAT_" .. s.chatType .. "_SEND"])
     end
     s.measured = header:GetText()
+    if header:GetWidth() > box:GetWidth() / 2 then
+        header:SetWidth(box:GetWidth() / 2)
+        suffix:Show()
+    else
+        suffix:Hide()
+    end
+    box:SetTextInsets(15 + header:GetWidth() + (suffix:IsShown() and suffix:GetWidth() or 0), 13, 0, 0)
+end
+
+-- A font string with no width of its own, as the game's header: as wide as
+-- its text.
+local function SizedToText(text)
+    rawset(text, "GetWidth", function(self)
+        if S[self].width > 0 then return S[self].width end
+        return self:GetStringWidth()
+    end)
+    return text
 end
 
 local function MakeChatFrame(i)
@@ -162,7 +182,9 @@ local function MakeChatFrame(i)
     local tab = H.BlizzardFrame("Button", name .. "Tab", UIParent)
     S[tab].text = i == 1 and "General" or ("Chat " .. i)
     local box = H.BlizzardFrame("EditBox", name .. "EditBox", frame)
-    H.BlizzardText(name .. "EditBoxHeader", box, "")
+    S[box].width = 360
+    SizedToText(H.BlizzardText(name .. "EditBoxHeader", box, ""))
+    SizedToText(H.BlizzardText(name .. "EditBoxHeaderSuffix", box, "..."))
     rawset(box, "GetChatType", function(self) return S[self].chatType end)
     rawset(box, "GetTellTarget", function(self) return S[self].tellTarget end)
     rawset(box, "GetChannelTarget", function(self) return S[self].channelTarget end)
@@ -520,13 +542,30 @@ Equal(H.Problems(), "", "nothing wrong turning off")
 -- The edit box header ---------------------------------------------------------------------------------------------------
 
 Game(nil)
-local box, header = ChatFrame1EditBox, ChatFrame1EditBoxHeader
+local box, header, suffix = ChatFrame1EditBox, ChatFrame1EditBoxHeader, ChatFrame1EditBoxHeaderSuffix
+-- Where the box's typed text starts (all four insets, or the left one), and
+-- where the game starts it after a header showing this text in full (the
+-- harness's six units a letter).
+local function Insets() return ("%d %d %d %d"):format(box:GetTextInsets()) end
+local function Inset() return ("%d"):format((box:GetTextInsets())) end
+local function Past(text) return 15 + 6 * #text end
+-- The addon's calls on the box itself since the last H.ResetWrites.
+local function BoxCalls()
+    local calls = {}
+    for _, entry in ipairs(H.writeLog) do calls[#calls + 1] = entry:match("^ChatFrame1EditBox:(%w+)$") end
+    return table.concat(calls, " ")
+end
 Type(box, "WHISPER", "Brannoc Stonehelm")
 Equal(H.Text(header) .. "|" .. H.Writes(), "Tell Brannoc Stonehelm: |0", "off: the game's own")
+Equal(Insets(), Past("Tell Brannoc Stonehelm: ") .. " 13 0 0", "(the game starts the typed text past it)")
 P:SetPrivate(true)
 Equal(H.Text(header), "Tell Warrior: ", "on: swapped where it shows")
+Equal(Insets(), Past("Tell Warrior: ") .. " 13 0 0", "the typed text moves up to it at once, as the game would put it, its other insets kept")
+H.ResetWrites()
 Type(box, "WHISPER", "Brannoc Stonehelm")
 Equal(H.Text(header) .. "|" .. S[box].measured, "Tell Warrior: |Tell Warrior: ", "and as the game sets it, before it's measured")
+Equal(Inset() .. "|" .. table.concat(H.writeLog, " "), Past("Tell Warrior: ") .. "|ChatFrame1EditBoxHeader:SetText",
+    "so the game fits the box to it itself: only the header's text written")
 Type(box, "EMOTE")
 Equal(H.Text(header), "Druid ", "your own name on /e")
 P:Set("myName", "Shade")
@@ -545,23 +584,102 @@ Equal(H.Text(header), "Say: ", "Say left")
 Type(box, "WHISPER", SECRET)
 Equal(H.Text(header), "Tell Player: ", "a name the game won't say: Player, never read")
 Type(box, "BN_WHISPER", "|Kq1|k")
-Equal(H.Text(header), "Tell Player: ", "a Battle.net friend")
+Equal(H.Text(header), "Tell Friend: ", "a Battle.net friend: Friend")
+-- Who: their class when the addon knows it, else Player.
+Type(box, "WHISPER", "Merrin Lightfoot")
+Equal(H.Text(header), "Tell Player: ", "someone the addon hasn't met: Player")
+Event(ChatFrame1, "CHAT_MSG_SAY", Msg("hi", "Merrin Lightfoot", MERRIN))
+Type(box, "WHISPER", "Merrin Lightfoot")
+Equal(H.Text(header), "Tell Priest: ", "once they've talked in chat (noted): their class")
+Type(box, "WHISPER", "Kaelis Dawnbrook")
+Equal(H.Text(header), "Tell Mage: ", "someone in your group")
+Type(box, "WHISPER", "Zriel Gustbellow")
+Equal(H.Text(header), "Tell Druid: ", "yourself: your own label")
 Type(box, "WHISPER", "Brannoc Stonehelm")
 P:Set("nameStyle", "player")
 Equal(H.Text(header), "Tell Player: ", "the name style changing: at once")
+Type(box, "BN_WHISPER", "|Kq1|k")
+Equal(H.Text(header), "Tell Friend: ", "a Battle.net friend is still Friend")
+P:Set("nameStyle", "hidden")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell: |" .. Past("Tell: "), "Hidden: blank, the space before it gone too, the typed text up to it")
+Type(box, "WHISPER", "Brannoc Stonehelm")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell: |" .. Past("Tell: "), "a player's too, as the game sets it")
 P:Set("nameStyle", "class")
-Equal(H.Text(header), "Tell Warrior: ", "and back")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Warrior: |" .. Past("Tell Warrior: "), "and back")
 P:Set("chatNames", false)
-Equal(H.Text(header), "Tell Brannoc Stonehelm: ", "names unticked: put back")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Brannoc Stonehelm: |" .. Past("Tell Brannoc Stonehelm: "),
+    "names unticked: put back at once, the typed text past it again")
 P:Set("chatNames", true)
-Equal(H.Text(header), "Tell Warrior: ", "ticked: swapped")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Warrior: |" .. Past("Tell Warrior: "), "ticked: swapped")
+-- Hide whispers keeps who you whisper hidden too, as it does the whisper tab.
+P:Set("whispers", true)
+P:Set("chatNames", false)
+P:Set("channels", false)
+Equal(H.Text(header), "Tell Warrior: ", "only Hide whispers ticked: still swapped")
+Type(box, "WHISPER", "Brannoc Stonehelm")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Warrior: |" .. Past("Tell Warrior: "), "and as the game sets it")
+Type(box, "BN_WHISPER", "|Kq1|k")
+Equal(H.Text(header), "Tell Friend: ", "a Battle.net friend too")
+Type(box, "EMOTE")
+Equal(H.Text(header), "Zriel ", "your own name on /e follows Swap names in chat alone")
+Type(box, "WHISPER", "Brannoc Stonehelm")
+P:Set("whispers", false)
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Brannoc Stonehelm: |" .. Past("Tell Brannoc Stonehelm: "), "neither ticked: put back at once")
+P:Set("chatNames", true)
+P:Set("channels", true)
+Equal(H.Text(header), "Tell Warrior: ", "swapped again")
 Type(box, "CHANNEL", 1)
 P:Set("channels", false)
-Equal(H.Text(header), "[1. General - Elwynn Forest]: ", "channel names unticked: put back")
+Equal(H.Text(header) .. "|" .. Inset(), "[1. General - Elwynn Forest]: |" .. Past("[1. General - Elwynn Forest]: "),
+    "channel names unticked: put back, the typed text clear of it")
 P:Set("channels", true)
-Equal(H.Text(header), "[1. General]: ", "ticked: swapped")
+Equal(H.Text(header) .. "|" .. Inset(), "[1. General]: |" .. Past("[1. General]: "), "ticked: swapped")
 P:SetPrivate(false)
-Equal(H.Text(header), "[1. General - Elwynn Forest]: ", "off: put back")
+Equal(H.Text(header) .. "|" .. Inset(), "[1. General - Elwynn Forest]: |" .. Past("[1. General - Elwynn Forest]: "), "off: put back")
+-- Off with a whisper open: the game's header back at once, and nothing of what's sent ever touched.
+H.ResetWrites()
+P:SetPrivate(true)
+Type(box, "WHISPER", "Brannoc Stonehelm")
+P:SetPrivate(false)
+Equal(H.Text(header) .. "|" .. Insets(), "Tell Brannoc Stonehelm: |" .. Past("Tell Brannoc Stonehelm: ") .. " 13 0 0",
+    "off with a whisper open: the game's header back at once, the typed text past it")
+Equal(BoxCalls(), "SetTextInsets SetTextInsets", "on the box itself: only where its typed text starts")
+Equal(H.Calls(box, "SetText") .. "|" .. S[box].chatType .. "|" .. S[box].tellTarget, "0|WHISPER|Brannoc Stonehelm",
+    "what's typed, the chat type and who it goes to never touched")
+-- A name longer than half the box: the game cuts its header short, "..." after it.
+Type(box, "WHISPER", "Bartholomew Thunderstrike")
+Equal(tostring(H.Shown(suffix)) .. "|" .. Inset(), "true|" .. (15 + 180 + 18), "(off: a long name cut short by the game)")
+H.ResetWrites()
+P:SetPrivate(true)
+Equal(H.Text(header) .. "|" .. Inset() .. "|" .. BoxCalls(), "Tell Player: |213|",
+    "on: the label in the game's cut-short header, the typed text left where the game put it")
+Type(box, "WHISPER", "Bartholomew Thunderstrike")
+Equal(tostring(H.Shown(suffix)) .. "|" .. Inset(), "false|" .. Past("Tell Player: "), "the game's next update fits it to the label")
+P:SetPrivate(false)
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Bartholomew Thunderstrike: |" .. Past("Tell Bartholomew Thunderstrike: "),
+    "off: the long name back in full, the typed text past all of it (the game cuts it short again at its next update)")
+-- The box closed: the header swapped, the box left (the game fits it as it opens).
+H.Blizzard(function() box:Hide() end)
+H.ResetWrites()
+P:SetPrivate(true)
+Equal(H.Text(header) .. "|" .. BoxCalls(), "Tell Player: |", "the box closed: the header swapped, the box itself left")
+H.Blizzard(function() box:Show() end)
+Type(box, "WHISPER", "Brannoc Stonehelm")
+Equal(H.Text(header) .. "|" .. Inset(), "Tell Warrior: |" .. Past("Tell Warrior: "), "opened: the game fits it")
+P:SetPrivate(false)
+-- A header width the game won't say: the box left as it is, nothing read.
+rawset(header, "GetWidth", function() return SECRET end)
+H.ResetWrites()
+P:SetPrivate(true)
+P:SetPrivate(false)
+Equal(H.Text(header) .. "|" .. BoxCalls(), "Tell Brannoc Stonehelm: |", "a secret width: the header swapped and back, the box left")
+SizedToText(header)
+rawset(box, "GetTextInsets", function() return SECRET, 13, 0, 0 end)
+H.ResetWrites()
+P:SetPrivate(true)
+P:SetPrivate(false)
+Equal(BoxCalls(), "", "insets the game won't say: the box left too")
+rawset(box, "GetTextInsets", nil)
 H.ResetWrites()
 Type(box, "WHISPER", "Brannoc Stonehelm")
 Equal(H.Text(header) .. "|" .. H.Writes(), "Tell Brannoc Stonehelm: |0", "off: the hook does nothing")

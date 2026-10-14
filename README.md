@@ -7,8 +7,10 @@ A private mode for streams and screenshots in World of Warcraft: Forever. Turn i
 ## ✦ What it covers
 
 - 🧑 **Names everywhere:** player, target, focus, party and raid frames, nameplates, tooltips, names above heads and pets. Names become a class name ("Mage"), "Player", or nothing at all.
-- ✏️ **Your own name and BattleTag:** show a name of your choosing, and a made-up BattleTag in the friends windows, in the colour you pick.
-- 💬 **Chat:** names swapped in every channel, whispers kept out of chat, zone names trimmed from channel names, timestamps and chat bubbles hidden. Trade, General and Looking for Group can stay readable if you like.
+- ✏️ **Your own name, BattleTag and guild:** show a name of your choosing in the colour you pick, a made-up BattleTag in the friends windows, and a made-up guild in your own tooltip and the guild list.
+- 💬 **Chat:** names swapped in every channel, whispers kept out of chat, zone names trimmed from channel names, timestamps and chat bubbles hidden. The chat box shows "Tell Mage:" instead of who you're whispering. Trade, General and Looking for Group can stay readable if you like.
+- 📬 **Whisper inbox:** hidden whispers are kept in a private inbox to read later, off stream. Chat only says how many are waiting, and the minimap button shows a count.
+- ☕ **Be right back screen:** one key covers the whole screen with your own message and how long you've been away. Handy for breaks on stream.
 - 👥 **Friends and guild:** both friends windows (the classic list and the new social window), your BattleTag and its copy button, /who, ignore and recent players, the guild roster, news and message of the day, mail and the group finder.
 - 🪟 **Windows and pop-ups:** invites, duels, trades, summons and res requests, ready checks, right-click menus, loot rolls, the damage meter, linked professions and the battleground scoreboard.
 - 🗺️ **Where you are:** the zone name, coordinates, big zone announcements, the clock, the world map and your gold.
@@ -47,6 +49,8 @@ A private mode for streams and screenshots in World of Warcraft: Forever. Turn i
 - `/privacy` opens the settings
 - `/privacy on`, `/privacy off`, `/privacy toggle`
 - `/privacy minimap` shows or hides the minimap button
+- `/privacy inbox` opens the whisper inbox (or shift-click the minimap button)
+- `/privacy brb` shows or hides the be right back screen (or set its key in Key Bindings)
 
 ## ⚙️ Settings
 
@@ -59,6 +63,8 @@ Every part can be switched on or off on its own.
 ## ℹ️ Good to know
 
 Some things the game doesn't let an addon change, such as the title of a few right-click menus and some hover boxes in the new social window. The **Good to know** page in `/privacy` lists them and how to work round them.
+
+When you type `/w` and a name, those letters show until the chat box switches to "Tell Mage:".
 
 Settings changed while private mode is on (names above heads, chat bubbles and so on) are put back when you turn it off, log out or reload, so disabling the addon never leaves anything hidden.
 

@@ -6,7 +6,7 @@
 -- (Get..., Is..., Has..., Can..., Enumerate..., Num..., Does...), HookScript, or a cosmetic
 -- setter (SetText, SetFormattedText, SetTextColor, SetVertexColor,
 -- SetShadowColor, SetPassword; and SetAlpha, Show, Hide, SetShown, SetWidth,
--- SetHeight and SetSize only on what isn't protected), or one of the chat
+-- SetHeight, SetSize and SetTextInsets only on what isn't protected), or one of the chat
 -- history edits Blizzard opens to addons (SANCTIONED). That holds for the
 -- methods a test gives an object too (H.BlizzardFrame's fields, or rawset):
 -- a sealed object keeps its functions off its own table, so every call goes
@@ -26,7 +26,7 @@ local H = {}
 H.ADDON = "ForeverEnhancedPrivacy"
 -- The addon's files, in the TOC's order (Tools/TestRules.mjs checks they match).
 H.FILES = { "Core.lua", "Theme.lua", "Names.lua", "UnitFrames.lua", "Chat.lua", "Social.lua", "Windows.lua", "World.lua",
-    "Window.lua", "Eye.lua", "MinimapButton.lua" }
+    "Window.lua", "Eye.lua", "MinimapButton.lua", "BeRightBack.lua", "Inbox.lua" }
 
 local pack = table.pack or function(...) return { n = select("#", ...), ... } end
 local unpackAll = table.unpack or unpack
@@ -83,7 +83,10 @@ local tooltipCalling = false -- a tooltip's pre- or post-call is running
 local READS = { "Get", "Is", "Has", "Can", "Enumerate", "Num", "Does" }
 local COSMETIC = { SetText = true, SetFormattedText = true, SetTextColor = true, SetVertexColor = true, SetShadowColor = true,
     SetPassword = true }
-local UNPROTECTED = { SetAlpha = true, Show = true, Hide = true, SetShown = true, SetWidth = true, SetHeight = true, SetSize = true }
+-- SetTextInsets: where a text box's typed text starts (Chat keeps the chat
+-- box's typed text clear of its header, as the game does).
+local UNPROTECTED = { SetAlpha = true, Show = true, Hide = true, SetShown = true, SetWidth = true, SetHeight = true, SetSize = true,
+    SetTextInsets = true }
 -- Blizzard opens these to addons on purpose: a chat frame's history edits
 -- (ScrollingMessageFrameSecureMixin, which runs them as if untainted).
 local SANCTIONED = { TransformMessages = true, RemoveMessagesByPredicate = true }
@@ -383,6 +386,11 @@ end
 function Proto:HasFocus() return S[self].focus == true end
 function Proto:SetMaxLetters(n) S[self].maxLetters = n end
 function Proto:GetMaxLetters() return S[self].maxLetters or 0 end
+function Proto:SetTextInsets(left, right, top, bottom) S[self].insets = { left, right, top, bottom } end
+function Proto:GetTextInsets()
+    local insets = S[self].insets or { 0, 0, 0, 0 }
+    return insets[1], insets[2], insets[3], insets[4]
+end
 
 -- Seals an object and everything in it as Blizzard's (its functions moved
 -- apart, so calling them goes through the check).

@@ -3,8 +3,9 @@
 -- always) and /reload, the modules (set up only when first needed, told in
 -- order, one failing never stopping the rest, nothing at all while private
 -- mode is off), the record of changes and putting them back, CVars saved and
--- restored (crash recovery and combat included), the eye, your own name and
--- made-up BattleTag (tidied, checked at load, re-labelling while private), and
+-- restored (crash recovery and combat included), the eye, your own name,
+-- made-up BattleTag and guild (tidied, checked at load, re-labelling while
+-- private), and
 -- every naming helper (NameFor, labels, names noted while private, swapping
 -- names in text), secrets included.
 -- Run with fengari: Tools/TestCore.lua
@@ -46,7 +47,7 @@ local DB = function() return ForeverEnhancedPrivacyDB end
 Fresh(nil)
 Equal(type(DB()), "table", "saved settings made")
 Equal(P:Private(), false, "private mode starts off")
-Equal(#P.KEYS, 42, "42 settings across the five list pages")
+Equal(#P.KEYS, 43, "43 settings across the five list pages (a button row is no setting)")
 local OFF = { cleanOld = true, whispers = true, gold = true, clock = true, publicChannels = true }
 for _, key in ipairs(P.KEYS) do
     local row = P.ROWS[key]
@@ -64,14 +65,16 @@ do
     local owners = {}
     for _, row in pairs(P.ROWS) do owners[row.owner] = (owners[row.owner] or 0) + 1 end
     Equal(owners.UnitFrames .. " " .. owners.Chat .. " " .. owners.Social .. " " .. owners.Windows .. " " .. owners.World,
-        "8 8 9 8 9", "each surface module owns its rows")
+        "8 9 9 8 9", "each surface module owns its rows")
+    Equal(tostring(P:Get("whisperInbox")) .. " " .. P.ROWS.whisperInbox.page .. " " .. P.ROWS.whisperInbox.owner,
+        "true chat Chat", "Keep hidden whispers in an inbox: on to begin with (it keeps only what's hidden), on the Chat page, Chat's")
     Equal(tostring(P:Get("publicChannels")) .. " " .. P.ROWS.publicChannels.page .. " " .. P.ROWS.publicChannels.owner,
         "false chat Chat", "Leave public channels as they are: off to begin with, on the Chat page, Chat's")
     Equal(P.ROWS.combatText, nil, "healer names are left to the game's own options (a CVar it caches)")
 end
-Equal(table.concat(H.NewGlobals(), " "), "BINDING_HEADER_FEPRIVACY BINDING_NAME_FEPRIVACY_TOGGLE ForeverEnhancedPrivacyDB "
-    .. "ForeverEnhancedPrivacyMinimapButton ForeverEnhancedPrivacy_Toggle SLASH_FEPRIVACY1",
-    "only its own globals (the minimap button named, for minimap tidiers)")
+Equal(table.concat(H.NewGlobals(), " "), "BINDING_HEADER_FEPRIVACY BINDING_NAME_FEPRIVACY_BRB BINDING_NAME_FEPRIVACY_TOGGLE "
+    .. "ForeverEnhancedPrivacyDB ForeverEnhancedPrivacyMinimapButton ForeverEnhancedPrivacy_BeRightBack ForeverEnhancedPrivacy_Toggle "
+    .. "SLASH_FEPRIVACY1", "only its own globals (the minimap button named, for minimap tidiers; the be right back screen made when first asked for)")
 Equal(H.category and H.category.title, "Forever Enhanced Privacy", "listed under Options > AddOns")
 Equal(#H.cvarWrites, 0, "no game setting touched at load")
 Equal(H.Writes(), 0, "nothing of Blizzard's touched at load")
@@ -123,6 +126,51 @@ Equal("[" .. P:Get("myTag") .. "] " .. tostring(DB().myTag), "[] nil", "a saved 
 Fresh({ myTag = string.rep("z", 200) })
 Equal("[" .. P:Get("myTag") .. "] " .. tostring(DB().myTag), "[] nil", "and one far too long to be typed")
 
+-- A made-up guild ("Your guild becomes"): tidied the same way, without the
+-- tooltip's own brackets.
+Equal(P.GUILD_MAX, 24, "a guild of at most 24 letters")
+Equal("[" .. P:Get("myGuild") .. "] " .. tostring(P:MyGuild()), "[] nil", "none typed to begin with (off)")
+Equal(P:CleanGuild("  Lancers   of  Elwynn  "), "Lancers of Elwynn", "guild: spaces trimmed and squeezed")
+Equal(P:CleanGuild("<Lancers of Elwynn>"), "Lancers of Elwynn", "guild: the tooltip's brackets dropped, so they never show twice")
+Equal(P:CleanGuild("< Iron > Wolves"), "Iron Wolves", "guild: any bracket, with the spaces it leaves")
+Equal(P:CleanGuild("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "ABCDEFGHIJKLMNOPQRSTUVWX", "guild: at most 24 letters")
+Equal(P:CleanGuild("Zr\195\175el's Kin of the Grove Wardens"), "Zr\195\175el's Kin of the Grove", "guild: letters, not bytes")
+Equal(P:CleanGuild("|cffff0000Red|r Two\nLines"), "cffff0000Redr Two Lines", "guild: no escape codes or control characters")
+Equal(P:CleanGuild(H.SECRET) .. "|" .. P:CleanGuild(nil) .. "|" .. P:CleanGuild(42), "||", "guild: a secret never read, only text taken")
+Fresh(nil)
+Equal(tostring(P:Set("myGuild", "  <Lancers of Elwynn> ")) .. " " .. P:Get("myGuild") .. " " .. DB().myGuild,
+    "true Lancers of Elwynn Lancers of Elwynn", "a typed guild saves, tidied")
+Equal(tostring(P:Set("myGuild", "Lancers of Elwynn")), "false", "the same again changes nothing")
+Equal(P:Get("myName") .. "|" .. P:Get("myTag"), "|", "your name and BattleTag are their own settings")
+Equal(tostring(P:MyGuild()), "nil", "while private mode is off, it shows nowhere")
+P:SetPrivate(true)
+Equal(tostring(P:MyGuild()), "Lancers of Elwynn", "private, with Your guild's name ticked: it shows")
+Equal(select("#", P:MyGuild()), 1, "plain: no colour comes with it")
+P:Set("myColour", "accent")
+Equal(select("#", P:MyGuild()) .. " " .. P:MyGuild(), "1 Lancers of Elwynn", "and the Name colour plays no part")
+P:Set("myColour", "game")
+P:Set("guildName", false)
+Equal(tostring(P:MyGuild()), "nil", "Your guild's name unticked: nowhere")
+P:Set("guildName", true)
+P:Set("nameStyle", "hidden")
+Equal(tostring(P:MyGuild()), "Lancers of Elwynn", "the Hidden style leaves a typed guild, as it does a typed BattleTag")
+P:Set("nameStyle", "class")
+Equal(P:GuildLine(P:MyGuild()), "Lancers of Elwynn", "as a tooltip's guild line: plain, as Forever draws it")
+Equal(tostring(P:Set("myGuild", "  <> ")) .. " [" .. P:Get("myGuild") .. "] " .. tostring(P:MyGuild()), "true [] nil",
+    "brackets and spaces alone: emptied, so hidden as before")
+P:Set("myGuild", "Lancers of Elwynn")
+Equal(tostring(P:Set("myGuild", 7)) .. " [" .. P:Get("myGuild") .. "]", "true []", "anything but text counts as nothing typed")
+P:SetPrivate(false)
+Fresh({ myGuild = "  <Mr|r   Wolves>  " })
+Equal(P:Get("myGuild"), "Mrr Wolves", "a saved guild is cleaned as it loads")
+Fresh({ myGuild = string.rep("g", 30) })
+Equal(P:Get("myGuild"), string.rep("g", 24), "and cut to 24 letters")
+Fresh({ myGuild = 12 })
+Equal("[" .. P:Get("myGuild") .. "] " .. tostring(DB().myGuild), "[] nil", "a saved one that isn't text goes back to none")
+Fresh({ myGuild = string.rep("z", 200) })
+Equal("[" .. P:Get("myGuild") .. "] " .. tostring(DB().myGuild), "[] nil", "and one far too long to be typed")
+Equal(H.Problems(), "", "nothing wrong with the guild setting")
+
 -- /privacy and the key binding -------------------------------------------------------------------------
 
 Fresh(nil)
@@ -143,9 +191,12 @@ Equal(P:Private(), false, "and off")
 SlashCmdList.FEPRIVACY("what")
 True(H.printed[#H.printed]:find("/privacy on, off or toggle", 1, true), "anything else: how to use it")
 True(H.printed[#H.printed]:find("/privacy minimap shows or hides the minimap button.", 1, true), "the minimap button's command too")
+True(H.printed[#H.printed]:find("/privacy brb shows or hides the be right back screen.", 1, true), "and the be right back screen's")
+True(H.printed[#H.printed]:find("/privacy inbox shows the whispers kept while private mode hid them.", 1, true), "and the inbox's")
 H.Clear()
 Equal(BINDING_HEADER_FEPRIVACY .. " / " .. BINDING_NAME_FEPRIVACY_TOGGLE, "Forever Enhanced Privacy / Toggle private mode",
     "the key binding's names")
+Equal(BINDING_NAME_FEPRIVACY_BRB, "Toggle be right back screen", "and the be right back screen's key, under the same heading")
 ForeverEnhancedPrivacy_Toggle()
 Equal(P:Private(), true, "the key turns it on")
 Equal(#H.printed, 0, "quietly")
@@ -204,10 +255,15 @@ P:Set("myTag", "")
 Equal(Log(), "Names:Apply(true,myTag) UnitFrames:Apply(true,myTag) Chat:Apply(true,myTag) Social:Apply(true,myTag) "
     .. "Windows:Apply(true,myTag) World:Apply(true,myTag)", "and emptied again: the same")
 P:Set("myTag", "Fake#9999")
-Log()
+P:Set("myGuild", "Lancers of Elwynn")
+Equal(Log(), "Names:Apply(true,myTag) UnitFrames:Apply(true,myTag) Chat:Apply(true,myTag) Social:Apply(true,myTag) "
+    .. "Windows:Apply(true,myTag) World:Apply(true,myTag) Names:Apply(true,myGuild) UnitFrames:Apply(true,myGuild) "
+    .. "Chat:Apply(true,myGuild) Social:Apply(true,myGuild) Windows:Apply(true,myGuild) World:Apply(true,myGuild)",
+    "a made-up guild: everyone too, as for the BattleTag")
 P:Set("myName", "Shade")
 P:Set("myColour", "accent")
 P:Set("myTag", "  Fake#9999 ")
+P:Set("myGuild", " <Lancers of Elwynn> ")
 P:Set("mode", "key")
 P:Set("eye", true)
 Equal(Log(), "", "no change, no news; and the mode and eye are no module's")
@@ -254,6 +310,12 @@ do
     bad()
     Equal(#H.printed, 1, "said once")
     True(H.printed[1]:find("The World part", 1, true), "naming the module")
+    H.Clear()
+    -- A part that isn't about names gives its own ending.
+    local own = P:Guard("test screen", function() error("Test.lua:2: oops", 0) end, "so it may not close.")
+    own()
+    Equal(H.printed[1]:match(": (.*)$"), "The test screen part hit an error, so it may not close. Test.lua:2: oops",
+        "its own ending, in place of names")
     H.Clear()
 end
 
@@ -529,9 +591,9 @@ Equal(H.Problems(), "", "nothing wrong at login")
 -- Reset all settings ------------------------------------------------------------------------------------------------------
 
 -- Everything changed, private mode on with CVars changed: a reset puts it all back.
-Fresh({ mode = "always", nameStyle = "hidden", myName = "Shade", myTag = "Fake#9999", myColour = "white", eye = false,
-    chatNames = false, publicChannels = true, instChat = "chat", worldMap = "hide", gold = true, cleanOld = true, combatText = true,
-    someOldKey = "x" })
+Fresh({ mode = "always", nameStyle = "hidden", myName = "Shade", myTag = "Fake#9999", myGuild = "Lancers of Elwynn", myColour = "white",
+    eye = false, chatNames = false, publicChannels = true, instChat = "chat", worldMap = "hide", gold = true, cleanOld = true,
+    combatText = true, someOldKey = "x", brbText = "Back in 5" })
 do
     Equal(P:Private(), true, "reset: private mode on from login (always)")
     Spy()
@@ -559,8 +621,10 @@ do
     Equal(offFirst, "11 nil Shade", "private mode off and every CVar back first, before any setting is dropped")
     for _, key in ipairs(P.KEYS) do Equal(P:Get(key), P.DEFAULTS[key], key .. " back to its default") end
     for key, value in pairs(P.DEFAULTS) do Equal(P:Get(key), value, key .. ": the default") end
-    Equal(P:Get("mode") .. " " .. P:Get("nameStyle") .. " [" .. P:Get("myName") .. "][" .. P:Get("myTag") .. "] " .. P:Get("myColour")
-        .. " " .. tostring(P:Get("eye")), "key class [][] game true", "with its key, class names, no name or BattleTag, the eye on")
+    Equal(P:Get("mode") .. " " .. P:Get("nameStyle") .. " [" .. P:Get("myName") .. "][" .. P:Get("myTag") .. "][" .. P:Get("myGuild")
+        .. "][" .. P:Get("brbText") .. "] " .. P:Get("myColour") .. " " .. tostring(P:Get("eye")), "key class [][][][] game true",
+        "with its key, class names, no name, BattleTag, guild or be right back message, the eye on")
+    Equal(P:BrbText(), "Be right back", "the be right back screen says \"Be right back\" again")
     do
         local left = {}
         for key, value in pairs(DB()) do left[#left + 1] = key .. "=" .. (type(value) == "table" and "{}" or tostring(value)) end
@@ -586,6 +650,30 @@ end
 H.Environment()
 P = H.Load({ cvarBackup = {}, wasOn = false }, { reload = true })
 Equal(P:Private(), false, "after a reset, a /reload: off")
+
+-- Stores: saved things that aren't settings (the whisper inbox), kept by a reset.
+Fresh(nil)
+do
+    Equal(tostring(P:Store("inbox", false)) .. " " .. tostring(DB().inbox), "nil nil", "no store until something is kept")
+    local store = P:Store("inbox")
+    Equal(type(store) .. " " .. tostring(rawequal(DB().inbox, store)) .. " " .. tostring(rawequal(P:Store("inbox", false), store)),
+        "table true true", "made in the saved settings when first asked for, the same one after")
+    Equal(tostring(P:Store("myName")) .. " " .. tostring(P:Store("cvarBackup")) .. " " .. tostring(P:Store("bogus")), "nil nil nil",
+        "only a known store: never a setting or the CVar backup")
+    Equal(tostring(P:Set("inbox", {})) .. " " .. tostring(rawequal(DB().inbox, store)), "false true", "and never set as a setting")
+    store[1] = { at = 1, text = "on my way" }
+    P:Set("gold", true)
+    P:SetPrivate(true)
+    P:Reset()
+    Equal(tostring(rawequal(DB().inbox, store)) .. " " .. store[1].text .. " " .. tostring(DB().gold), "true on my way nil",
+        "a reset keeps it, whole, and drops the settings")
+    H.Clear()
+end
+Fresh({ inbox = "nope" })
+Equal(tostring(DB().inbox) .. " " .. tostring(P:Store("inbox", false)), "nil nil", "a saved store that isn't a table is dropped at load")
+Fresh({ inbox = { { at = 1, to = "Zriel Gustbellow" } } })
+Equal(#P:Store("inbox", false), 1, "a saved one is kept (its owner checks what's in it)")
+Equal(H.Problems(), "", "nothing wrong with the stores")
 
 -- In combat: the settings reset at once, the CVars wait for the fight to end, their originals kept till then.
 Fresh(nil)
@@ -823,6 +911,18 @@ do
     Equal(Swap("Greetings, Zriel.", "adventurer"), "Greetings, adventurer.", "or the module's own words for you")
     Equal(Swap("Merrin Lightfoot", nil, true), "|cffffffffPriest|r", "in its colour, asked")
     Equal(Swap("Nobody here"), "Nobody here", "nothing to swap")
+    -- Seen in game: a player named Dark and one named War turned a quest link
+    -- "[30+] The Dark Iron War" into "[30+] The Rogue Iron Warrior".
+    P:Learn("Dark Ember", "ROGUE")
+    P:Learn("War Hollow", "WARRIOR")
+    local quest = "LFM |cffffff00|Hquest:3801:30|h[[30+] The Dark Iron War]|h|r ask Dark"
+    Equal(Swap(quest), "LFM |cffffff00|Hquest:3801:30|h[[30+] The Dark Iron War]|h|r ask Rogue",
+        "a quest link's title never changed; the name after it still goes")
+    Equal(Swap("|cff1eff00|Hitem:2244::::|h[Dark Blade]|h|r and |Hspell:133|h[War Stomp]|h"),
+        "|cff1eff00|Hitem:2244::::|h[Dark Blade]|h|r and |Hspell:133|h[War Stomp]|h", "nor an item's or a spell's")
+    Equal(Swap("|Hplayer:Dark Ember|h[Dark Ember]|h: hi War"), "|Hplayer:Dark Ember|h[Rogue]|h: hi Warrior",
+        "a player's link still swapped")
+    Equal(Swap("|Hquest:1|h[Dark"), "|Hquest:1|h[Dark", "an unfinished link left alone")
     local same, changed = P:ReplaceNames(H.SECRET)
     True(rawequal(same, H.SECRET) and changed == false, "a secret comes back untouched")
     Equal(tostring(select(2, P:ReplaceNames("Merrin"))), "true", "says when it changed")

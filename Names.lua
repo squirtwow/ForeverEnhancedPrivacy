@@ -104,6 +104,22 @@ function P:MyTag()
     return tag, MyColour()
 end
 
+-- Your made-up guild ("Your guild becomes") while private mode is on and
+-- "Your guild's name" is ticked, else nil. Only ever for your own guild,
+-- and plain: the Name colour plays no part.
+function P:MyGuild()
+    if not P:IsOn("guildName") then return nil end
+    local guild = P:Get("myGuild")
+    if type(guild) ~= "string" or guild == "" then return nil end
+    return guild
+end
+
+-- A guild's name as the line under a player's name in their tooltip: plain,
+-- as Forever draws it (seen in game: "RUIN", no brackets).
+function P:GuildLine(guild)
+    return guild
+end
+
 -- Your first name and your full name ("First Surname"; just the first
 -- name when there's no surname), or nil while the game won't say.
 function P:MyNames()
@@ -319,6 +335,22 @@ local function EscapeEnd(text, bar)
     return math.min(#text, bar + 1)
 end
 
+-- Where a link that starts at bar ends, when it's one whose shown words are
+-- never names: a quest's, an item's, a spell's, a channel's. Only a player's
+-- link shows a name, so only its words are swapped (a player named Dark once
+-- turned the quest "The Dark Iron War" into "The Rogue Iron Warrior").
+-- nil: a player's link, or not a link.
+local NAME_LINKS = { player = true, playerCommunity = true, BNplayer = true, BNplayerCommunity = true }
+local function OtherLinkEnd(text, bar)
+    if text:sub(bar + 1, bar + 1) ~= "H" then return nil end
+    local kind = text:match("^|H([^:|]*)", bar)
+    if NAME_LINKS[kind] then return nil end
+    local data = text:find("|h", bar + 2, true)
+    if not data then return #text end
+    local close = text:find("|h", data + 2, true)
+    return close and close + 1 or #text
+end
+
 -- Swaps every name it knows in text: yours (full name first, then your
 -- first name) and every noted name, as whole words only, never inside a
 -- link's data or an escape code. me: words for you instead of your label
@@ -340,7 +372,7 @@ function P:ReplaceNames(text, me, colour, mineOnly)
             changed = changed or did
         end
         if not bar then break end
-        local last = EscapeEnd(text, bar)
+        local last = OtherLinkEnd(text, bar) or EscapeEnd(text, bar)
         out[#out + 1] = text:sub(bar, last)
         i = last + 1
     end

@@ -223,6 +223,36 @@ function T:Button(parent, label, accent)
     return button
 end
 
+-- A small count in an accent dot, never taking the mouse (the whisper
+-- inbox's, on the eye and the minimap button). Set(count) shows 1 to 9, then
+-- "9+" (the dot a little wider), and hides at none.
+function T:Badge(parent, size)
+    local C = self.C
+    local badge = CreateFrame("Frame", nil, parent)
+    badge:SetSize(size, size)
+    badge:SetFrameLevel((parent:GetFrameLevel() or 1) + 2)
+    badge:EnableMouse(false)
+    local dot = badge:CreateTexture(nil, "OVERLAY")
+    dot:SetAllPoints()
+    dot:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+    dot:SetVertexColor(self.ACCENT[1], self.ACCENT[2], self.ACCENT[3])
+    badge.dot = dot
+    badge.count = self:Text(badge, "GameFontNormalSmall", C.onAccent)
+    badge.count:SetPoint("CENTER", 0, 0)
+    badge.count:SetJustifyH("CENTER")
+    -- The font's dark shadow smears dark text on the accent.
+    badge.count:SetShadowColor(0, 0, 0, 0)
+    function badge:Set(count)
+        count = tonumber(count) or 0
+        self:SetShown(count > 0)
+        if count <= 0 then return end
+        self.count:SetText(count > 9 and "9+" or tostring(math.floor(count)))
+        self:SetWidth(count > 9 and size + 6 or size)
+    end
+    badge:Hide()
+    return badge
+end
+
 -- A small square button (the window's close).
 function T:Square(parent, label)
     local C = self.C

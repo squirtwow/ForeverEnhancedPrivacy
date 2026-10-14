@@ -1,7 +1,7 @@
 // The addon's rules, checked straight from its source: the TOC lists every
-// Lua file once, in the harness's order; the key binding is wired up; no em
+// Lua file once, in the harness's order; both key bindings are wired up; no em
 // dash anywhere (player text included, even as an escape); no runtime key
-// binding changes; CVars only through the core's helper; GameTooltip never
+// binding changes; no frame taking the keyboard; CVars only through the core's helper; GameTooltip never
 // named; no text run as code; no Blizzard window opened or closed and no
 // Blizzard function of the "Name_Update" kind called by the addon; Blizzard's
 // frames named in the code never shown, hidden, moved, scripted or written
@@ -102,23 +102,31 @@ test('the TOC: the right fields, and every Lua file once, in the harness\'s orde
   assert.deepEqual(listed, files, 'the harness loads them in the TOC\'s order');
   assert.deepEqual(listed.slice(0, 3), ['Core.lua', 'Theme.lua', 'Names.lua'], 'the core first');
   assert.deepEqual(listed.slice(3, 8), MODULES.map(name => name + '.lua'), 'then the five modules');
-  assert.deepEqual(listed.slice(8), ['Window.lua', 'Eye.lua', 'MinimapButton.lua'], 'then the window, the eye and the minimap button');
+  assert.deepEqual(listed.slice(8), ['Window.lua', 'Eye.lua', 'MinimapButton.lua', 'BeRightBack.lua', 'Inbox.lua'],
+    'then the window, the eye, the minimap button, the be right back screen and the whisper inbox');
 });
 
-test('the key binding: Bindings.xml calls the core\'s global, under AddOns', async () => {
+test('the key bindings: Bindings.xml calls the core\'s globals, under AddOns', async () => {
   const xml = await read('Bindings.xml');
   assert.match(xml, /<Binding name="FEPRIVACY_TOGGLE" header="FEPRIVACY" category="ADDONS">\s*ForeverEnhancedPrivacy_Toggle\(\)\s*<\/Binding>/);
+  // The be right back screen's key, under the same heading (only the first
+  // binding names it, or the game lists the heading twice).
+  assert.match(xml, /<Binding name="FEPRIVACY_BRB" category="ADDONS">\s*ForeverEnhancedPrivacy_BeRightBack\(\)\s*<\/Binding>/);
+  assert.equal(xml.match(/<Binding /g).length, 2, 'two bindings');
+  assert.equal(xml.match(/header=/g).length, 1, 'one heading');
   const core = await read('Core.lua');
   assert.match(core, /^BINDING_HEADER_FEPRIVACY = P\.TITLE\r?$/m);
   assert.match(core, /^BINDING_NAME_FEPRIVACY_TOGGLE = "Toggle private mode"\r?$/m);
+  assert.match(core, /^BINDING_NAME_FEPRIVACY_BRB = "Toggle be right back screen"\r?$/m);
   assert.match(core, /^function ForeverEnhancedPrivacy_Toggle\(\)\r?$/m);
+  assert.match(core, /^function ForeverEnhancedPrivacy_BeRightBack\(\)\r?$/m);
   const toc = await read('ForeverEnhancedPrivacy.toc');
   assert.doesNotMatch(toc, /Bindings\.xml\s*$/m, 'Bindings.xml loads on its own, never from the TOC');
 });
 
 test('no em dash anywhere, even as an escape', async () => {
   const names = [...await rootFiles(/\.(lua|xml|toc|txt|md)$/i), 'Tools/Notes.md', 'Tools/Harness.lua', 'Tools/TestCore.lua',
-    'Tools/TestWindow.lua'];
+    'Tools/TestWindow.lua', 'Tools/TestBeRightBack.lua'];
   const found = [];
   for (const name of names) {
     let text;
@@ -134,6 +142,18 @@ test('no key binding is ever changed by the addon\'s code', async () => {
   const found = [];
   for (const { name, code } of await addonCode()) {
     for (const match of code.matchAll(/\b(SetOverrideBinding\w*|ClearOverrideBindings|SetBinding\w*|SaveBindings|LoadBindings)\b/g)) {
+      found.push(`${name}:${lineOf(code, match.index)} ${match[1]}`);
+    }
+  }
+  assert.deepEqual(found, []);
+});
+
+// Keys always reach the game: no frame of the addon takes the keyboard (one
+// that does can swallow Escape, and changing it in a fight is blocked).
+test('no frame of the addon takes the keyboard', async () => {
+  const found = [];
+  for (const { name, code } of await addonCode()) {
+    for (const match of code.matchAll(/\b(EnableKeyboard|SetPropagateKeyboardInput|EnableGamePadButton)\s*\(/g)) {
       found.push(`${name}:${lineOf(code, match.index)} ${match[1]}`);
     }
   }
@@ -266,7 +286,8 @@ test('no Blizzard function of the Name_Update kind called by the addon', async (
   const found = [];
   for (const { name, code } of await addonCode()) {
     for (const match of code.matchAll(/(?<![\w.:])([A-Z][A-Za-z0-9]*_[A-Za-z0-9_]+)\s*\(/g)) {
-      if (match[1] === 'ForeverEnhancedPrivacy_Toggle') continue;
+      // The addon's own key binding functions.
+      if (['ForeverEnhancedPrivacy_Toggle', 'ForeverEnhancedPrivacy_BeRightBack'].includes(match[1])) continue;
       found.push(`${name}:${lineOf(code, match.index)} ${match[1]}`);
     }
   }
@@ -360,7 +381,7 @@ test('every module registers itself, and its header names every setting it owns'
     (owned[match[2]] = owned[match[2]] || []).push(match[1]);
   }
   assert.deepEqual(Object.keys(owned).sort(), [...MODULES].sort(), 'the rows belong to the five modules');
-  assert.equal(Object.values(owned).flat().length, 42, 'all 42 rows');
+  assert.equal(Object.values(owned).flat().length, 43, 'all 43 rows');
   for (const module of MODULES) {
     const source = await read(module + '.lua');
     const header = source.match(/^(?:--[^\n]*\n)+/);

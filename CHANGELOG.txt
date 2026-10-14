@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+- Your guild becomes: a made-up guild name in your own tooltip, your guild's row and your /who line while private.
+- Whisper inbox: hidden whispers wait in an inbox; `/privacy inbox` or shift-click the minimap button to read them off stream.
+- Be right back screen: a key or `/privacy brb` covers the screen with your message and how long you've been away.
+- While private, the chat box says "Tell Mage:" instead of the name of who you're whispering.
+
+### Fixed
+- Quest, item and spell links in chat keep their words when they match a hidden player's name.
+- Escape in the Overview's boxes keeps what you typed.
+
 ## 1.0.0
 
 ### Added

@@ -6,14 +6,16 @@
 --     BattleTag in its header, with its copy button out of reach, friend and
 --     request cards, the broadcast box), and Quick Join and Recruit-A-Friend.
 --   bnToasts: the Battle.net pop-ups say "A friend".
---   whoList: /who rows (covered, never rewritten, so right-click still works),
---     the ignore and block list, and recent players (both windows).
+--   whoList: /who rows (covered, never rewritten, so right-click still works;
+--     your own row's guild hidden, or your made-up guild over it), the
+--     ignore and block list, and recent players (both windows).
 --   roster: guild roster rows and notes, the member details panel and the
 --     guild event log.
 --   news: the guild news feed, the message of the day and the guild info text.
 --   guildName: your guild's name in the guild window's list (communities
---     too) and on the inspect window's guild tab. (Guild charters are the
---     Windows module's, under its pop-ups setting.)
+--     too; your guild shows your made-up guild, if typed) and on the
+--     inspect window's guild tab. (Guild charters are the Windows module's,
+--     under its pop-ups setting.)
 --   mail: inbox senders and subjects, the open letter (sender, body, invoice),
 --     the To box when sending and its suggestions.
 --   groupFinder: leader names in the group finder, its hover box and comments.
@@ -472,6 +474,18 @@ end
 
 -- /who, ignore and recent players (whoList) --------------------------------------------------------
 
+-- Your own /who row's guild: hidden, or your made-up guild laid over it (in
+-- the column's own colour) while you're in a guild, as in your tooltip.
+-- Anyone else's row shows theirs.
+local function WhoGuild(row, mine)
+    local region = row.GuildName
+    local guild = mine and Plain(Call(IsInGuild)) == true and P:MyGuild()
+    if guild then return Cover("whoList", row, region, guild) end
+    local cover = region and covers[region]
+    if cover and cover.frame then cover.frame:Hide() end
+    MaskIf("whoList", region, mine)
+end
+
 -- /who rows: the right-click menu reads the name back off the row, so the
 -- name is covered, never rewritten.
 local function WhoRow(row, elementData)
@@ -484,7 +498,7 @@ local function WhoRow(row, elementData)
     -- Your own row's zone and guild.
     local mine = P:IsMyName(name)
     MaskIf("whoList", row.Variable, mine)
-    MaskIf("whoList", row.GuildName, mine)
+    WhoGuild(row, mine)
 end
 
 local function RefreshWho()
@@ -621,9 +635,14 @@ local function ClubRow(row, elementData)
     if not P:IsOn("guildName") or not row.Name then return end
     local club = Field(elementData, "clubInfo")
     if not club then return end
+    -- One you're in (the game marks those): an invitation or a ticket is
+    -- another guild's, never yours.
+    local joined = Field(club, "isClub") == true
     if Field(club, "isTicket") then club = Field(club, "clubInfo") or club end
     local guildType = Enum and Enum.ClubType and Enum.ClubType.Guild
-    Put("guildName", row.Name, Field(club, "clubType") == guildType and GUILD or COMMUNITY)
+    if Field(club, "clubType") ~= guildType then return Put("guildName", row.Name, COMMUNITY) end
+    -- Your own guild: your made-up guild, if one is typed.
+    Put("guildName", row.Name, joined and P:MyGuild() or GUILD)
 end
 
 local function RefreshClubs()
@@ -1212,6 +1231,10 @@ function M:Setup()
     HookFinderAndCalendar()
 end
 
+-- Your own /who row shows your made-up guild only while guildName is
+-- ticked, so a change to that tick re-labels the whoList lists too.
+local ALSO = { guildName = "whoList" }
+
 -- Private mode on: everything ticked, as it shows now. A setting turned
 -- off has already been put back by the core; one turned on (or a name
 -- setting changed) is applied to what's showing. Off: the core puts back
@@ -1221,7 +1244,7 @@ function M:Apply(on, key)
     if key == nil then LearnBattleNet() end
     local all = key == nil or P.NAME_KEYS[key]
     for owned, list in pairs(onScreen) do
-        if (all or key == owned) and P:IsOn(owned) then
+        if (all or key == owned or ALSO[key] == owned) and P:IsOn(owned) then
             for _, fn in ipairs(list) do fn() end
         end
     end

@@ -8,6 +8,8 @@
 -- it steps aside the moment a screenshot starts and comes back once it's
 -- taken. The Overview's Extras tick (or /privacy minimap) hides it. Named
 -- (ForeverEnhancedPrivacyMinimapButton) so minimap tidiers can find it.
+-- While whispers wait in the inbox (Inbox.lua), a small count sits on it and
+-- its hover box says how many; a shift-click opens the inbox.
 local _, P = ...
 
 local T = P.Theme
@@ -18,10 +20,10 @@ P.MinimapButton = MB
 
 local RING_GAP = 4 -- how far out from the minimap's edge it sits
 local AFTER_DRAG = .2 -- a click this soon after a drag is the drag letting go
-local TIP_W, TIP_LINES = 220, 4
+local TIP_W = 220
 local atan2 = math.atan2 or math.atan
 
-local button, tip, dragAngle
+local button, tip, dragAngle, badge
 local dropped = -math.huge
 
 -- Round the minimap's edge at the saved angle (degrees anticlockwise from
@@ -59,21 +61,33 @@ end
 
 -- The hover box ------------------------------------------------------------------------------
 
--- What it says: private mode's state, then what the mouse does. Never a
--- name of any kind.
+-- Whispers in the inbox: unread, and kept at all.
+local function Whispers()
+    local inbox = P.Inbox
+    if not inbox then return 0, 0 end
+    return inbox:Unread(), inbox:Count()
+end
+
+-- What it says: private mode's state, then what the mouse does; while the
+-- inbox keeps whispers, how many wait and how to open it. Never a name of
+-- any kind.
 local function TipLines()
     local on = P:Private()
-    return {
-        "Private mode: " .. (on and T:Paint("on", T.ACCENT) or "off"),
-        on and "Left-click: turn it off" or "Left-click: turn it on",
-        "Right-click: settings",
-        "Drag: move it round the minimap",
-    }
+    local unread, kept = Whispers()
+    local lines = { "Private mode: " .. (on and T:Paint("on", T.ACCENT) or "off") }
+    if unread > 0 then
+        lines[#lines + 1] = T:Paint(unread == 1 and "1 whisper waiting" or (unread .. " whispers waiting"), T.ACCENT)
+    end
+    lines[#lines + 1] = on and "Left-click: turn it off" or "Left-click: turn it on"
+    lines[#lines + 1] = "Right-click: settings"
+    if kept > 0 then lines[#lines + 1] = "Shift-click: whisper inbox" end
+    lines[#lines + 1] = "Drag: move it round the minimap"
+    return lines
 end
 
 local function BuildTip()
     tip = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    tip:SetSize(TIP_W, 28 + TIP_LINES * 14)
+    tip:SetSize(TIP_W, 28 + 4 * 14)
     tip:SetFrameStrata("TOOLTIP")
     tip:SetClampedToScreen(true)
     tip:EnableMouse(false)
@@ -82,16 +96,28 @@ local function BuildTip()
     tip.title:SetPoint("TOPLEFT", 10, -8)
     tip.title:SetText(P.TITLE)
     tip.lines = {}
-    for i = 1, TIP_LINES do
-        local line = T:Text(tip, "GameFontHighlightSmall", i == 1 and C.text or C.soft)
-        line:SetPoint("TOPLEFT", 10, -12 - i * 14)
-        tip.lines[i] = line
-    end
     tip:Hide()
 end
 
+-- Each line made the first time there are that many; the box as tall as
+-- the lines it shows.
 local function FillTip()
-    for i, text in ipairs(TipLines()) do tip.lines[i]:SetText(text) end
+    local lines = TipLines()
+    for i, text in ipairs(lines) do
+        local line = tip.lines[i]
+        if not line then
+            line = T:Text(tip, "GameFontHighlightSmall", i == 1 and C.text or C.soft)
+            line:SetPoint("TOPLEFT", 10, -12 - i * 14)
+            tip.lines[i] = line
+        end
+        line:SetText(text)
+        line:Show()
+    end
+    for i = #lines + 1, #tip.lines do
+        tip.lines[i]:SetText("")
+        tip.lines[i]:Hide()
+    end
+    tip:SetHeight(28 + #lines * 14)
 end
 
 -- Toward the middle of the screen from the button, so it's never cut off.
@@ -143,7 +169,9 @@ local function Build()
     button:RegisterForDrag("LeftButton")
     button:SetScript("OnClick", function(_, click)
         if GetTime() - dropped < AFTER_DRAG then return end
-        if click == "RightButton" then
+        if type(IsShiftKeyDown) == "function" and IsShiftKeyDown() then
+            if P.Inbox then P.Inbox:Toggle() end
+        elseif click == "RightButton" then
             if P.ToggleWindow then P.ToggleWindow() end
         else
             P:SetPrivate(not P:Private(), "minimap")
@@ -174,6 +202,17 @@ function MB:Wanted()
     return P:Get("minimap") == true and not P:Shooting()
 end
 
+-- Whispers waiting in the inbox, by its count at the button's top right
+-- (made the first time there are any).
+local function Count()
+    local unread = Whispers()
+    if unread > 0 and not badge then
+        badge = T:Badge(button, 14)
+        badge:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
+    end
+    if badge then badge:Set(unread) end
+end
+
 -- The eye in the accent while private mode is on, grey while it's off.
 function MB:Refresh()
     if not button then return end
@@ -181,11 +220,16 @@ function MB:Refresh()
     button.eye:SetVertexColor(tint[1], tint[2], tint[3])
     button:SetShown(self:Wanted())
     self:Place()
+    Count()
     if tip and tip:IsShown() then FillTip() end
 end
 
 function MB:Button()
     return button
+end
+
+function MB:Badge()
+    return badge
 end
 
 function MB:Tip()

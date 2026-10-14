@@ -2,4 +2,7 @@
 	<Binding name="FEPRIVACY_TOGGLE" header="FEPRIVACY" category="ADDONS">
 		ForeverEnhancedPrivacy_Toggle()
 	</Binding>
+	<Binding name="FEPRIVACY_BRB" category="ADDONS">
+		ForeverEnhancedPrivacy_BeRightBack()
+	</Binding>
 </Bindings>

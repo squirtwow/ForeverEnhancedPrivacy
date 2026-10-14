@@ -17,6 +17,12 @@ P.NAME_MAX = 24 -- letters in "Your name becomes"
 -- Letters in "Your BattleTag becomes": room for any real BattleTag, and
 -- still inside the older friends window's BattleTag box (190 wide).
 P.TAG_MAX = 24
+-- Letters in "Your guild becomes": as many as the name and BattleTag boxes.
+P.GUILD_MAX = 24
+-- Letters in the be right back screen's message (BeRightBack.lua), and what
+-- it says while its box is empty.
+P.BRB_MAX = 40
+P.BRB_TEXT = "Be right back"
 
 local issecretvalue = issecretvalue or function() return false end
 
@@ -28,10 +34,14 @@ end
 
 -- Pages and rows ------------------------------------------------------------------------
 -- Each row's owner is the module that does the work for it. Rows with
--- options are choices; the rest are ticks. A tag is a quiet word after the
--- label. The descriptions show in the window's footer on hover.
+-- options are choices; the rest are ticks. A row with run (and no key) is a
+-- button, not a setting: it takes a tick's place and runs it when clicked. A
+-- tag is a quiet word after the label. The descriptions show in the window's
+-- footer on hover.
 
 local HIDE_ONLY, EXPERIMENTAL = "hide only", "experimental"
+-- The whisper inbox's tick and button both say how to open it, and why not on stream.
+local INBOX_HINT = P.SLASH .. " inbox opens it too. Real names show there, so open it off stream."
 
 P.PAGES = {
     { key = "overview", label = "Overview", about = "Turn private mode on, and pick how names look while it is." },
@@ -75,17 +85,26 @@ P.SECTIONS = {
     chat = {
         { title = "Names", rows = {
             -- Two columns, filled row by row: "Leave public channels as they
-            -- are" sits right under "Swap names in chat", the choice below both.
+            -- are" sits right under "Swap names in chat", the inbox's tick
+            -- under "Hide whispers" and its button under that, the choice
+            -- below them all.
             { key = "chatNames", owner = "Chat", label = "Swap names in chat",
-                desc = "Names in every channel, emotes and system lines. Works in the open world and cities." },
+                desc = "Names in every channel, emotes and system lines, and who you're whispering in the chat box. Works in the "
+                    .. "open world and cities." },
             { key = "whispers", owner = "Chat", label = "Hide whispers",
-                desc = "Whispers and Battle.net whispers stay out of chat while private mode is on. A whisper can still open "
-                    .. "an empty whisper tab." },
+                desc = "Whispers and Battle.net whispers stay out of chat while private mode is on, and who you're whispering is "
+                    .. "swapped in the chat box. A whisper can still open an empty whisper tab." },
             { key = "publicChannels", owner = "Chat", label = "Leave public channels as they are",
                 desc = "Names in Trade, General and Looking for Group show as normal, so you can read who's selling and "
                     .. "chatting. Your own name is still swapped." },
+            -- Inbox.lua does the work; Chat owns the row, as it hides the whispers.
+            { key = "whisperInbox", owner = "Chat", label = "Keep hidden whispers in an inbox",
+                desc = "Whispers that Hide whispers keeps out of chat wait in an inbox, and chat only says how many. "
+                    .. INBOX_HINT },
             { key = "cleanOld", owner = "Chat", label = "Clean lines already in chat",
                 desc = "Names already in chat are cleaned when you turn it on. They don't come back after." },
+            { id = "inbox", label = "Open the whisper inbox", run = function() if P.Inbox then P.Inbox:Toggle() end end,
+                desc = "Shows the whispers kept while private mode hid them. " .. INBOX_HINT },
             { key = "instChat", owner = "Chat", label = "In dungeons and raids", default = "names",
                 options = { { key = "names", label = "Hide names" }, { key = "chat", label = "Hide chat" },
                     { key = "leave", label = "Leave as is" } },
@@ -117,7 +136,7 @@ P.SECTIONS = {
             { key = "news", owner = "Social", label = "Guild news and message of the day",
                 desc = "The news feed, and the guild message, which officers can write anything in." },
             { key = "guildName", owner = "Social", label = "Your guild's name",
-                desc = "Your guild name in the guild window and on your character." },
+                desc = "Your guild name in the guild window and on your character, or a made-up one typed on the Overview." },
         } },
         { title = "Other", rows = {
             { key = "mail", owner = "Social", label = "Mail",
@@ -175,6 +194,9 @@ P.SECTIONS = {
 P.LIMITS = {
     { title = "Chat in dungeons, raids and battlegrounds", text = "The game locks names there. Hide names turns each locked line "
         .. "into \"[Party] (hidden)\", and Hide chat takes it out. Those lines don't come back." },
+    { title = "Typing a whisper", text = "The name you type after /w, and any name the game suggests, shows until the chat box "
+        .. "switches to the whisper, then it reads like \"Tell Mage:\". Click their name in chat, or pick Whisper on a right-click "
+        .. "menu, to skip typing it." },
     { title = "Names above heads", text = "The game draws them itself, so they can be hidden but never renamed." },
     { title = "A few hover tooltips", text = "Cards and Quick Join groups in the newer Friends window, Raid tab buttons, guild "
         .. "roster rows, group dots on the world map, the mail icon by the minimap, calendar days, the roll history's "
@@ -209,7 +231,7 @@ P.COLOURS = {
 P.COLOUR_HELP = "The colour of your name and BattleTag while private. Game's own keeps whatever colour the game gives it in each place."
 -- Settings that change how names look: every module hears of a change to
 -- one while private, and re-labels what's showing.
-P.NAME_KEYS = { nameStyle = true, myName = true, myColour = true, myTag = true }
+P.NAME_KEYS = { nameStyle = true, myName = true, myColour = true, myTag = true, myGuild = true }
 -- The Overview's Extras: the eye and the minimap button, side by side.
 P.EYE_ROW = { key = "eye", label = "Show a small eye",
     desc = "A small eye at the top of the screen while private mode is on, so you know it's working. It hides itself in "
@@ -217,20 +239,28 @@ P.EYE_ROW = { key = "eye", label = "Show a small eye",
 P.MINIMAP_ROW = { key = "minimap", label = "Show a minimap button",
     desc = "Left-click turns private mode on or off, right-click opens these settings, and you can drag it round the minimap. "
         .. "It hides itself in screenshots." }
+-- The be right back screen's message box, at the foot of the Overview's
+-- Extras. The screen hides the game for you too, so its note says it's for breaks.
+P.BRB_ROW = { key = "brbText", label = "Be right back screen",
+    desc = "A full-screen card with your message and how long you've been away. It covers the game for you too, so it's "
+        .. "for breaks. Empty: \"Be right back\"." }
 -- Where the minimap button starts: degrees anticlockwise from the minimap's
 -- right, so 180 is its left. A spot of its own, clear of where Squirt's
 -- other addons put theirs.
 P.MINIMAP_ANGLE = 165
 P.RELOAD_NOTE = "Some things only come back fully after a /reload."
 
--- Every row by its key, and the keys in the window's order.
+-- Every row by its key, and the keys in the window's order (a button has no
+-- key: it isn't a setting).
 P.ROWS, P.KEYS = {}, {}
 for _, page in ipairs(P.PAGES) do
     for _, section in ipairs(P.SECTIONS[page.key] or {}) do
         for _, row in ipairs(section.rows) do
             row.page = page.key
-            P.ROWS[row.key] = row
-            P.KEYS[#P.KEYS + 1] = row.key
+            if row.key then
+                P.ROWS[row.key] = row
+                P.KEYS[#P.KEYS + 1] = row.key
+            end
         end
     end
 end
@@ -240,8 +270,8 @@ end
 local OFF_BY_DEFAULT = { cleanOld = true, whispers = true, gold = true, clock = true, publicChannels = true }
 -- Settings an earlier build had, cleared from the saved variables.
 local RETIRED = { "combatText" }
-P.DEFAULTS = { mode = "key", nameStyle = "class", myName = "", myColour = "game", myTag = "", eye = true, minimap = true,
-    minimapAngle = P.MINIMAP_ANGLE }
+P.DEFAULTS = { mode = "key", nameStyle = "class", myName = "", myColour = "game", myTag = "", myGuild = "", eye = true,
+    minimap = true, minimapAngle = P.MINIMAP_ANGLE, brbText = "" }
 for key, row in pairs(P.ROWS) do
     if row.options then
         P.DEFAULTS[key] = row.default
@@ -265,6 +295,8 @@ local function Valid(key, value)
     if key == "myColour" then return Listed(P.COLOURS, value) end
     if key == "myName" then return type(value) == "string" and #value <= P.NAME_MAX * 4 end
     if key == "myTag" then return type(value) == "string" and #value <= P.TAG_MAX * 4 end
+    if key == "myGuild" then return type(value) == "string" and #value <= P.GUILD_MAX * 4 end
+    if key == "brbText" then return type(value) == "string" and #value <= P.BRB_MAX * 4 end
     -- A number round the circle (never NaN or endless, which fail both).
     if key == "minimapAngle" then return type(value) == "number" and value >= 0 and value < 360 end
     local row = P.ROWS[key]
@@ -299,6 +331,18 @@ function P:CleanTag(text)
     return P:CleanName(text, P.TAG_MAX)
 end
 
+-- A typed guild ("Your guild becomes"), made safe the same way, without the
+-- angle brackets a tooltip already puts round a guild's name.
+function P:CleanGuild(text)
+    if type(text) ~= "string" or P.IsSecret(text) then return "" end
+    return P:CleanName((text:gsub("[<>]", "")), P.GUILD_MAX)
+end
+
+-- A typed be right back message, made safe the same way (more letters).
+function P:CleanBrb(text)
+    return P:CleanName(text, P.BRB_MAX)
+end
+
 local db
 local loaded = false
 local private = false -- private mode is on
@@ -310,6 +354,19 @@ function P:Get(key)
     local value = db and db[key]
     if value == nil then return P.DEFAULTS[key] end
     return value
+end
+
+-- Saved things that aren't settings, by name (Inbox.lua's whispers): a table
+-- in the saved variables, made the first time it's asked for (make false:
+-- only looked for). Reset all settings keeps them: they're yours, not options.
+local STORES = { inbox = true }
+function P:Store(name, make)
+    if not db or not STORES[name] then return nil end
+    if type(db[name]) ~= "table" then
+        if make == false then return nil end
+        db[name] = {}
+    end
+    return db[name]
 end
 
 function P:Private()
@@ -324,6 +381,13 @@ end
 -- screenshots"), so changes that can't be put back are skipped.
 function P:ShotOnly()
     return private and shotOnly
+end
+
+-- What the be right back screen says: your message, or "Be right back".
+function P:BrbText()
+    local text = P:Get("brbText")
+    if type(text) ~= "string" or text == "" then return P.BRB_TEXT end
+    return text
 end
 
 -- Whether a setting's surface should be private right now: private mode is
@@ -351,20 +415,24 @@ function P:Say(text)
 end
 
 local reported = {}
--- A module's error, said once in chat; the other modules carry on.
-local function Report(name, err)
+-- A module's error, said once in chat; the other modules carry on. tail: what
+-- it means for the player, for a part that isn't about names (the be right
+-- back screen); else "so it may miss some names."
+local function Report(name, err, tail)
     name = tostring(name or "?")
     if reported[name] then return end
     reported[name] = true
     local text = ""
     if type(err) == "string" and not P.IsSecret(err) then text = err:match("^[^\n]*") or "" end
     if #text > 160 then text = text:sub(1, 160) .. "..." end
-    P:Print(("The %s part hit an error, so it may miss some names. %s"):format(name, text))
+    if type(tail) ~= "string" then tail = "so it may miss some names." end
+    P:Print(("The %s part hit an error, %s %s"):format(name, tail, text))
 end
 P.Report = Report
 
--- Listeners (the window, the eye, the minimap button) hear about every
--- change: a setting's key, "private", "shot" or "reset".
+-- Listeners (the window, the eye, the minimap button, the be right back
+-- screen, the whisper inbox) hear about every
+-- change: a setting's key, "private", "shot", "reset" or "inbox".
 local listeners = {}
 function P:Listen(listener)
     listeners[#listeners + 1] = listener
@@ -375,6 +443,12 @@ local function Notify(what)
         local ok, err = pcall(listener, what)
         if not ok then Report("window", err) end
     end
+end
+
+-- For a part that keeps something of its own (the whisper inbox, "inbox"):
+-- every listener hears of its change, as of a setting's.
+function P:Notify(what)
+    Notify(what)
 end
 
 -- Modules ----------------------------------------------------------------------------------
@@ -407,12 +481,13 @@ local function Run(module, method, ...)
 end
 
 -- A function that can't break anything else: an error is said once and
--- swallowed (returning nothing). For hooks, filters and post-calls.
-function P:Guard(module, fn)
+-- swallowed (returning nothing). For hooks, filters and post-calls. tail:
+-- the error's own ending, as Report has it.
+function P:Guard(module, fn, tail)
     local name = type(module) == "table" and module.name or module
     local function Pass(ok, ...)
         if ok then return ... end
-        Report(name, (...))
+        Report(name, (...), tail)
     end
     return function(...)
         return Pass(pcall(fn, ...))
@@ -784,6 +859,8 @@ end
 function P:Set(key, value)
     if key == "myName" then value = P:CleanName(value) end
     if key == "myTag" then value = P:CleanTag(value) end
+    if key == "myGuild" then value = P:CleanGuild(value) end
+    if key == "brbText" then value = P:CleanBrb(value) end
     if not db or not Valid(key, value) or P:Get(key) == value then return false end
     db[key] = value
     if private then
@@ -803,15 +880,18 @@ end
 
 -- "Reset all settings" (the Overview, after the window asks). Private mode
 -- goes off first, the usual way, so everything it changed is put back; then
--- every saved setting is dropped, so each is its default again (your name and
--- BattleTag empty, with its key). Only CVar originals still waiting to go back
--- (in a fight) are kept, so they go back once it ends. The key binding is the
--- game's, so it stays.
+-- every saved setting is dropped, so each is its default again (your name,
+-- BattleTag, guild and be right back message empty, with its key). The be
+-- right back screen isn't a setting: it stays as it is. Only CVar originals still waiting
+-- to go back (in a fight) are kept, so they go back once it ends, and the
+-- stores (kept whispers). The key binding is the game's, so it stays.
 function P:Reset()
     if not loaded then return false end
     P:SetPrivate(false, "reset")
-    local backup = db.cvarBackup
+    local backup, kept = db.cvarBackup, {}
+    for name in pairs(STORES) do kept[name] = db[name] end
     for key in pairs(db) do db[key] = nil end
+    for name, store in pairs(kept) do db[name] = store end
     db.cvarBackup = type(backup) == "table" and backup or {}
     db.wasOn = false
     Notify("reset")
@@ -823,9 +903,15 @@ end
 
 BINDING_HEADER_FEPRIVACY = P.TITLE
 BINDING_NAME_FEPRIVACY_TOGGLE = "Toggle private mode"
+BINDING_NAME_FEPRIVACY_BRB = "Toggle be right back screen"
 
 function ForeverEnhancedPrivacy_Toggle()
     P:Toggle()
+end
+
+-- The be right back screen's key (BeRightBack.lua), with private mode on or off.
+function ForeverEnhancedPrivacy_BeRightBack()
+    if P.BeRightBack then P.BeRightBack:Toggle() end
 end
 
 local function Slash(msg)
@@ -842,9 +928,16 @@ local function Slash(msg)
         P:Set("minimap", not P:Get("minimap"))
         P:Print(P:Get("minimap") and "The minimap button is back."
             or ("The minimap button is hidden. " .. P.SLASH .. " minimap brings it back."))
+    elseif msg == "brb" then
+        -- Quietly, as its key: the screen says it all.
+        ForeverEnhancedPrivacy_BeRightBack()
+    elseif msg == "inbox" then
+        -- The whispers private mode kept out of chat (Inbox.lua).
+        if P.Inbox then P.Inbox:Toggle() end
     else
         P:Print(P.SLASH .. " opens the settings. " .. P.SLASH .. " on, off or toggle turns private mode on or off. " .. P.SLASH
-            .. " minimap shows or hides the minimap button.")
+            .. " minimap shows or hides the minimap button. " .. P.SLASH .. " brb shows or hides the be right back screen. "
+            .. P.SLASH .. " inbox shows the whispers kept while private mode hid them.")
     end
 end
 
@@ -888,7 +981,13 @@ local function Load()
     end
     if db.myName ~= nil then db.myName = P:CleanName(db.myName) end
     if db.myTag ~= nil then db.myTag = P:CleanTag(db.myTag) end
+    if db.myGuild ~= nil then db.myGuild = P:CleanGuild(db.myGuild) end
+    if db.brbText ~= nil then db.brbText = P:CleanBrb(db.brbText) end
     for _, key in ipairs(RETIRED) do db[key] = nil end
+    -- A store is a table or nothing (its owner checks what's in it).
+    for name in pairs(STORES) do
+        if db[name] ~= nil and type(db[name]) ~= "table" then db[name] = nil end
+    end
     if type(db.cvarBackup) ~= "table" then db.cvarBackup = {} end
     for name, value in pairs(db.cvarBackup) do
         if type(name) ~= "string" or type(value) ~= "string" then
